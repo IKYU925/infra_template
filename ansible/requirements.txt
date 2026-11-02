@@ -1,5 +1,5 @@
 # pip install -r requirements.txt
 ansible-core>=2.18,<2.22
 ansible-lint>=26.10,<27
-boto3>=1.35
+boto3>=1.43.122
 botocore>=1.35
