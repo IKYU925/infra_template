@@ -10,7 +10,7 @@ name: infra-local
 
 services:
   postgres:
-    image: postgres:17-alpine # RDS 와 같은 메이저 버전 유지
+    image: postgres:18-alpine # RDS 와 같은 메이저 버전 유지
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-app}
