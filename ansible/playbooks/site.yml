@@ -1,0 +1,11 @@
+---
+# 전체 구성: 하드닝 -> Docker -> 앱 배포
+#   ansible-playbook -i inventories/dev playbooks/site.yml
+- name: Harden OS and SSH
+  ansible.builtin.import_playbook: hardening.yml
+
+- name: Install Docker
+  ansible.builtin.import_playbook: docker.yml
+
+- name: Deploy application
+  ansible.builtin.import_playbook: app.yml

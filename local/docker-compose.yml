@@ -1,0 +1,87 @@
+# 로컬 개발 환경 (AWS 비용 없이 dev/prod 와 비슷한 구성)
+#
+#   기본          : postgres(RDS 대체) + app(EC2 대체)
+#   --profile aws        : floci (로컬 AWS 에뮬레이터, 권장)           -> http://localhost:4566
+#   --profile localstack : LocalStack (선택, GitHub 레포 아카이브됨)  -> http://localhost:4566
+#   --profile ansible-lab: Ansible 플레이북 실습용 Ubuntu 24.04 컨테이너
+#
+# aws 와 localstack 은 같은 포트를 쓰므로 둘 중 하나만 켠다.
+name: infra-local
+
+services:
+  postgres:
+    image: postgres:17-alpine # RDS 와 같은 메이저 버전 유지
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-app}
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in local/.env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 풀스택팀 앱으로 교체할 자리. build: ../ 경로나 레지스트리 이미지로 바꾼다.
+  app:
+    image: ${APP_IMAGE:-nginxinc/nginx-unprivileged:1.29-alpine}
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-app}
+      AWS_ENDPOINT_URL: http://aws:4566
+      AWS_REGION: ${AWS_REGION:-ap-northeast-2}
+      AWS_ACCESS_KEY_ID: test
+      AWS_SECRET_ACCESS_KEY: test
+    ports:
+      - "127.0.0.1:${APP_PORT:-8080}:8080"
+    read_only: true
+    tmpfs:
+      - /tmp
+    security_opt:
+      - no-new-privileges:true
+
+  # ---------------------------------------------------------------- 선택: 로컬 AWS
+  floci:
+    profiles: ["aws"]
+    image: floci/floci:2.4.0
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4566:4566"
+    networks:
+      default:
+        aliases: [aws]
+
+  localstack:
+    profiles: ["localstack"]
+    # LocalStack GitHub 레포는 2026-03 아카이브됨. 이미지 사용 조건(인증 토큰 필요 여부)을 먼저 확인할 것.
+    image: localstack/localstack:4.14.0
+    restart: unless-stopped
+    environment:
+      SERVICES: s3,sts,iam,secretsmanager,dynamodb,sqs
+      LOCALSTACK_AUTH_TOKEN: ${LOCALSTACK_AUTH_TOKEN:-}
+    ports:
+      - "127.0.0.1:4566:4566"
+    networks:
+      default:
+        aliases: [aws]
+
+  # ---------------------------------------------------------------- 선택: Ansible 실습
+  ansible-target:
+    profiles: ["ansible-lab"]
+    image: geerlingguy/docker-ubuntu2404-ansible:latest
+    container_name: infra-local-ansible-target
+    privileged: true
+    cgroup: host
+    volumes:
+      - /sys/fs/cgroup:/sys/fs/cgroup:rw
+    command: ["/usr/lib/systemd/systemd"]
+
+volumes:
+  postgres-data:

@@ -1,0 +1,10 @@
+---
+app_name: sample-app
+app_image: nginxinc/nginx-unprivileged:1.29-alpine
+app_port: 8080
+app_container_port: 8080
+app_base_dir: /opt/{{ app_name }}
+# 컨테이너에 넘길 환경 변수 (비밀값은 ansible-vault 또는 AWS Secrets Manager lookup 사용)
+app_env: {}
+# false 이면 compose 파일만 만들고 컨테이너는 띄우지 않는다 (로컬 실습용)
+app_compose_up: "{{ install_docker | default(true) | bool }}"

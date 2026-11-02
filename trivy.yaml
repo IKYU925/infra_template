@@ -1,0 +1,15 @@
+# Trivy 설정 (보안팀 관리). 로컬: trivy fs --config trivy.yaml .
+scan:
+  scanners:
+    - misconfig
+    - secret
+  skip-dirs:
+    - "**/.terraform"
+    - ansible/.galaxy
+severity:
+  - MEDIUM
+  - HIGH
+  - CRITICAL
+misconfiguration:
+  terraform:
+    exclude-downloaded-modules: false

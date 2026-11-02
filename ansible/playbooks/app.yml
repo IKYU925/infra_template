@@ -1,0 +1,9 @@
+---
+# 풀스택팀이 만든 컨테이너 이미지를 Docker Compose 로 배포한다.
+# 이미지/포트/환경 변수는 inventories/<env>/group_vars 에서 바꾼다.
+- name: Deploy application containers
+  hosts: app
+  become: true
+  tags: [app]
+  roles:
+    - role: app

@@ -1,0 +1,36 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+crash.log
+crash.*.log
+*.tfplan
+tfplan
+plan.txt
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+# .terraform.lock.hcl 은 커밋한다 (프로바이더 버전 고정)
+
+# Ansible
+ansible/.galaxy/
+ansible/.ansible/
+ansible/.ansible.log
+*.retry
+.vault_pass*
+
+# Local
+local/.env
+.env
+
+# Scan results
+*.sarif
+results.json
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

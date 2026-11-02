@@ -1,0 +1,10 @@
+# 팀 이름은 실제 GitHub 조직/팀으로 바꾼다.
+*                         @your-org/infra-team
+/terraform/               @your-org/infra-team
+/terraform/bootstrap/     @your-org/infra-team @your-org/security-team
+/ansible/inventories/*/group_vars/all/hardening.yml  @your-org/security-team
+/.checkov.yaml            @your-org/security-team
+/trivy.yaml               @your-org/security-team
+/.github/workflows/       @your-org/infra-team @your-org/security-team
+/local/                   @your-org/fullstack-team @your-org/infra-team
+/ansible/roles/app/       @your-org/fullstack-team @your-org/infra-team

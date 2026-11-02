@@ -1,0 +1,21 @@
+# ansible-galaxy install -r requirements.yml
+# 버전은 모두 고정. 올릴 때는 PR 로 올리고 CI(ansible-lint, syntax-check)를 통과시킨다.
+roles:
+  - name: geerlingguy.docker
+    src: https://github.com/geerlingguy/ansible-role-docker
+    version: 8.0.0
+  - name: geerlingguy.pip
+    src: https://github.com/geerlingguy/ansible-role-pip
+    version: 3.1.2
+
+collections:
+  - name: amazon.aws # 동적 인벤토리(aws_ec2) + SSM 접속(aws_ssm)
+    version: 12.0.0
+  - name: devsec.hardening # OS/SSH 하드닝 (보안팀 기준선)
+    version: 11.0.0
+  - name: community.docker
+    version: 5.4.0
+  - name: community.general
+    version: 13.5.0
+  - name: ansible.posix
+    version: 2.2.2

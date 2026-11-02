@@ -1,0 +1,16 @@
+---
+# 보안팀 기준선 (dev-sec). 변수는 inventories/<env>/group_vars/all/hardening.yml
+- name: Apply OS and SSH hardening baseline
+  hosts: all
+  become: true
+  tags: [hardening]
+  tasks:
+    - name: Apply OS hardening
+      ansible.builtin.include_role:
+        name: devsec.hardening.os_hardening
+      when: apply_os_hardening | default(true) | bool
+
+    - name: Apply SSH hardening
+      ansible.builtin.include_role:
+        name: devsec.hardening.ssh_hardening
+      when: apply_ssh_hardening | default(true) | bool

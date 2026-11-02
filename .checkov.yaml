@@ -1,0 +1,22 @@
+# Checkov 설정 (보안팀 관리). 로컬: checkov --config-file .checkov.yaml
+# 예외(skip-check)는 반드시 사유를 주석으로 남긴다.
+directory:
+  - .
+framework:
+  - terraform
+  - github_actions
+  - secrets
+# 외부 모듈(terraform-aws-modules) 내부는 Trivy 가 모듈을 풀어서 검사한다.
+# Checkov 로 모듈 내부까지 보면 조건부 리소스/분리된 설정 리소스를 따라가지 못해 오탐이 수십 건 나온다.
+download-external-modules: false
+skip-path:
+  - .terraform
+  - ansible/.galaxy
+compact: true
+quiet: true
+soft-fail: false
+skip-check:
+  # 레지스트리 모듈을 정확한 버전으로 고정하고 Dependabot 으로 관리한다 (커밋 해시 대신)
+  - CKV_TF_1
+  # terraform.yml 의 workflow_dispatch 입력은 apply 대상 환경 선택용이며 빌드 산출물이 없다
+  - CKV_GHA_7

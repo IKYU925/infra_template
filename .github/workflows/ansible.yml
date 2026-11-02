@@ -1,0 +1,42 @@
+name: ansible
+
+on:
+  pull_request:
+    paths:
+      - "ansible/**"
+      - ".github/workflows/ansible.yml"
+  push:
+    branches: [main]
+    paths:
+      - "ansible/**"
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: ansible-lint + syntax-check
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ansible
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: ansible/requirements.txt
+      - run: pip install -r requirements.txt
+      - name: Install roles and collections
+        run: |
+          ansible-galaxy role install -r requirements.yml -p .galaxy/roles
+          ansible-galaxy collection install -r requirements.yml -p .galaxy/collections
+      - name: Syntax check (all environments)
+        run: |
+          for env in local dev prod; do
+            echo "== $env"
+            ansible-playbook -i "inventories/$env" playbooks/site.yml --syntax-check
+          done
+      - name: ansible-lint
+        run: ansible-lint
