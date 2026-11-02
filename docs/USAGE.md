@@ -124,7 +124,7 @@ DB 에 직접 붙기: `psql postgresql://app:<비번>@localhost:5432/app`
 
 - **Settings → Branches → Add rule (`main`)**: PR 필수, 승인 1명 이상, 상태 검사 필수(`fmt`, `validate (...)`, `trivy ...`, `checkov ...`, `ansible-lint + syntax-check`), CODEOWNERS 리뷰 필수
 - **Settings → Code security**: Dependabot alerts / security updates 켜기
-- 스캔 결과를 **Security → Code scanning** 탭에서 보려면 공개 저장소이거나 GitHub Advanced Security 가 있어야 합니다. 없으면 SARIF 업로드 단계만 실패하고, 실패 여부는 워크플로 로그로 확인할 수 있습니다.
+- 스캔 결과를 **Security → Code scanning** 탭에서 보려면 공개 저장소이거나 GitHub Code Security(유료)가 있어야 합니다. 비공개 저장소에서는 업로드 단계가 경고로만 끝나고, 결과는 워크플로 실행 화면의 **Artifacts**(`trivy-sarif`, `checkov-sarif`)와 로그에서 볼 수 있습니다. HIGH/CRITICAL 판정은 업로드와 상관없이 동작합니다.
 
 변수를 넣기 전에는 plan/apply 단계가 안내 메시지만 남기고 건너뜁니다.
 
