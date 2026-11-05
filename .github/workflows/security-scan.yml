@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # upload-sarif 가 워크플로 실행 정보를 읽는 데 필요
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -30,12 +31,22 @@ jobs:
           format: sarif
           output: trivy.sarif
           exit-code: "0"
+      # 비공개 저장소는 GitHub Code Security(유료)가 없으면 업로드가 실패하므로 빌드를 막지 않는다.
+      # 결과는 아래 아티팩트(sarif 파일)로 항상 받을 수 있다.
       - name: Upload Trivy results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always()
+        continue-on-error: true
         with:
           sarif_file: trivy.sarif
           category: trivy
+      - name: Save Trivy SARIF as artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: trivy-sarif
+          path: trivy.sarif
+          if-no-files-found: ignore
       - name: Trivy gate (HIGH/CRITICAL fails the build)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -52,6 +63,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+      actions: read # upload-sarif 가 워크플로 실행 정보를 읽는 데 필요
       security-events: write
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -61,9 +73,19 @@ jobs:
           config_file: .checkov.yaml
           output_format: cli,sarif
           output_file_path: console,checkov.sarif
+      # 비공개 저장소는 GitHub Code Security(유료)가 없으면 업로드가 실패하므로 빌드를 막지 않는다.
+      # 결과는 아래 아티팩트(sarif 파일)로 항상 받을 수 있다.
       - name: Upload Checkov results to GitHub Security tab
         uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         if: always()
+        continue-on-error: true
         with:
           sarif_file: checkov.sarif
           category: checkov
+      - name: Save Checkov SARIF as artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: checkov-sarif
+          path: checkov.sarif
+          if-no-files-found: ignore

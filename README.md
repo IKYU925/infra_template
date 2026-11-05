@@ -3,6 +3,8 @@
 풀스택·보안·인프라 세 팀이 함께 쓰는 **인프라 구성 자동화 템플릿**입니다.
 Terraform 으로 AWS 리소스를 만들고, Ansible 로 서버를 설정하며, GitHub Actions 가 PR 마다 검사·plan·보안 스캔을 돌립니다.
 
+> **처음 쓰신다면 [사용 가이드(docs/USAGE.md)](docs/USAGE.md) 를 순서대로 따라 하세요.** 설치부터 GitHub 설정, 배포, 일상 작업 흐름, 문제 해결까지 단계별로 정리돼 있습니다.
+
 | 환경 | 어디서 | 무엇으로 |
 |---|---|---|
 | **local** | 개발자 PC | Docker Compose (postgres + app), 선택으로 floci / LocalStack 로컬 AWS |
@@ -34,6 +36,7 @@ Terraform 으로 AWS 리소스를 만들고, Ansible 로 서버를 설정하며,
 │   ├── workflows/ansible.yml         # ansible-lint + syntax-check
 │   ├── dependabot.yml                # 고정 버전 자동 업데이트 PR
 │   └── CODEOWNERS                    # 팀별 리뷰 담당
+├── docs/USAGE.md                     # 단계별 사용 가이드
 ├── trivy.yaml / .checkov.yaml        # 스캐너 설정 (보안팀 관리)
 ├── .pre-commit-config.yaml
 └── Makefile                          # make help

@@ -4,6 +4,8 @@
 # 여기서는 앱 코드가 호출하는 AWS API(S3, Secrets Manager 등)만 흉내 낸다.
 # dev/prod 와 같은 모듈(terraform-aws-modules/s3-bucket)을 써서 설정 차이를 줄인다.
 
+# 로컬 에뮬레이터용 버킷이라 고객 관리형 KMS 키(CMK)가 필요 없다.
+#trivy:ignore:AVD-AWS-0132
 module "artifact_bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
   version = "5.17.0"

@@ -67,6 +67,8 @@ module "vpc" {
 ################################################################################
 # Security Groups
 ################################################################################
+# 앱 서버는 패키지 설치와 SSM 접속을 위해 인터넷(443/80)으로 나가야 한다. 포트는 egress_rules 에서 443/80 으로 제한했다.
+#trivy:ignore:AVD-AWS-0104
 module "app_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "6.0.0"
@@ -90,13 +92,33 @@ module "app_sg" {
     } },
   )
 
-  egress_rules = {
-    all = {
-      description = "Outbound (package install, SSM, AWS APIs)"
-      ip_protocol = "-1"
-      cidr_ipv4   = "0.0.0.0/0"
-    }
-  }
+  # 아웃바운드는 필요한 포트만 연다.
+  #  - 443: SSM, AWS API, 컨테이너 레지스트리, 패키지 저장소
+  #  - 80 : Ubuntu apt 미러 (HTTP)
+  #  - 5432: DB 서브넷 (db_sg 를 참조하면 두 SG 가 서로 참조해 순환이 생기므로 CIDR 로 지정)
+  # 인터넷 대상 443/80 은 NAT 게이트웨이를 거친다. Trivy AWS-0104 예외는 보안팀 검토 대상.
+  egress_rules = merge(
+    {
+      https = {
+        description = "HTTPS to internet via NAT (SSM, AWS APIs, registries, packages)"
+        from_port   = 443
+        to_port     = 443
+        cidr_ipv4   = "0.0.0.0/0"
+      }
+      http = {
+        description = "HTTP to internet via NAT (apt mirrors)"
+        from_port   = 80
+        to_port     = 80
+        cidr_ipv4   = "0.0.0.0/0"
+      }
+    },
+    { for idx, cidr in local.database_subnets : "postgres-${idx}" => {
+      description = "PostgreSQL to database subnets"
+      from_port   = 5432
+      to_port     = 5432
+      cidr_ipv4   = cidr
+    } },
+  )
 
   tags = local.tags
 }
