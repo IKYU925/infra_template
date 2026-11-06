@@ -1,0 +1,15 @@
+# devsec.hardening 변수. 보안팀이 기준선을 관리한다.
+# 전체 목록: https://github.com/dev-sec/ansible-collection-hardening
+os_auth_pw_max_age: 90
+os_auth_retries: 5
+
+# os_hardening 은 기본으로 IP 포워딩을 끈다. 그러면 k3s 파드 네트워크(Flannel)가 동작하지 않는다.
+# bridge-nf-call 값은 br_netfilter 모듈이 올라간 뒤에 roles/k3s 가 설정한다.
+sysctl_overwrite:
+  net.ipv4.ip_forward: 1
+
+ssh_permit_root_login: "no"
+ssh_allow_tcp_forwarding: "no"
+ssh_client_alive_interval: 300
+# Vagrant 는 vagrant 사용자 + 키로 접속한다. 비밀번호 로그인은 막는다.
+ssh_server_password_login: false

@@ -1,0 +1,24 @@
+# prod EKS (Argo CD 가 배포)
+replicaCount: 3
+
+image:
+  # terraform -chdir=terraform/envs/prod output -raw ecr_repository_url
+  repository: CHANGE_ME.dkr.ecr.ap-northeast-2.amazonaws.com/myproject/app
+  # CI 가 ECR 에 올린 태그. 태그를 바꾸는 PR 이 병합되면 Argo CD 가 배포한다.
+  tag: "CHANGE_ME"
+
+ingress:
+  host: app.example.com # TODO: 실제 도메인 (DNS 를 Traefik NLB 주소로 연결)
+  annotations:
+    cert-manager.io/cluster-issuer: letsencrypt
+  tls:
+    enabled: true
+
+database:
+  source: external
+  external:
+    remoteKey: CHANGE_ME # terraform output -raw db_master_secret_arn
+    host: CHANGE_ME # terraform output -raw db_address
+
+networkPolicy:
+  ingressNamespace: traefik

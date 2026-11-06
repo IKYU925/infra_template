@@ -1,0 +1,26 @@
+# Argo CD 설치 값 (dev/prod EKS 전용. 로컬은 helm 으로 직접 배포한다)
+#   make argocd-bootstrap ENV=dev
+# 접속: kubectl -n argocd port-forward svc/argocd-server 8443:443  -> https://localhost:8443
+#       초기 비밀번호: kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d
+
+dex:
+  enabled: false # 처음에는 admin 계정만. SSO(GitHub 등)는 나중에 붙인다
+
+configs:
+  cm:
+    # Application 의 health 를 계산해야 app-of-apps 에서 sync-wave 순서가 지켜진다
+    resource.customizations.health.argoproj.io_Application: |
+      hs = {}
+      hs.status = "Progressing"
+      hs.message = ""
+      if obj.status ~= nil then
+        if obj.status.health ~= nil then
+          hs.status = obj.status.health.status
+          if obj.status.health.message ~= nil then
+            hs.message = obj.status.health.message
+          end
+        end
+      end
+      return hs
+  params:
+    server.insecure: false

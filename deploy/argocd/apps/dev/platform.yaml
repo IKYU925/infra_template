@@ -1,0 +1,20 @@
+# 클러스터 공통 설정: ClusterSecretStore(Secrets Manager), ClusterIssuer(Let's Encrypt)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: platform
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "-1"
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/IKYU925/infra_template.git # TODO: 템플릿을 복사한 저장소
+    targetRevision: main
+    path: deploy/platform
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

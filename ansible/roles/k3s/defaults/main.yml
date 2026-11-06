@@ -1,0 +1,19 @@
+---
+# k3s 버전은 EKS 의 Kubernetes 마이너 버전(terraform eks_version)과 맞춘다.
+k3s_version: v1.36.6+k3s1
+
+# server | agent (playbooks/k3s.yml 에서 정한다)
+k3s_role: server
+
+# 모든 노드가 같은 값을 써야 한다. Vagrant 가 만들어서 extra var 로 넘긴다.
+k3s_token: ""
+
+# 이 노드의 사설 IP (인벤토리 host_vars)와 서버 IP
+k3s_node_ip: ""
+k3s_server_ip: ""
+
+# 서버에 추가로 줄 옵션. Traefik(Ingress)은 EKS 와 같게 쓰려고 켜 둔다.
+k3s_server_disable: []
+
+# 서버 설치 후 kubeconfig 를 복사할 경로 (비우면 복사 안 함)
+k3s_kubeconfig_export_path: ""

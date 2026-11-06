@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "ansible/**"
+      - "local/vagrant/**"
       - ".github/workflows/ansible.yml"
   push:
     branches: [main]
@@ -28,15 +29,9 @@ jobs:
           cache: pip
           cache-dependency-path: ansible/requirements.txt
       - run: pip install -r requirements.txt
-      - name: Install roles and collections
-        run: |
-          ansible-galaxy role install -r requirements.yml -p .galaxy/roles
-          ansible-galaxy collection install -r requirements.yml -p .galaxy/collections
-      - name: Syntax check (all environments)
-        run: |
-          for env in local dev prod; do
-            echo "== $env"
-            ansible-playbook -i "inventories/$env" playbooks/site.yml --syntax-check
-          done
+      - name: Install collections
+        run: ansible-galaxy collection install -r requirements.yml -p .galaxy/collections
+      - name: Syntax check (local Vagrant inventory)
+        run: ansible-playbook -i inventories/local playbooks/site.yml --syntax-check
       - name: ansible-lint
         run: ansible-lint

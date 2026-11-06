@@ -1,0 +1,13 @@
+# 로컬 Vagrant k3s
+# 이미지는 노트북에서 빌드한 뒤 make local-image-import IMAGE=<이미지> 로 VM 에 넣는다 (ECR 을 쓰지 않음)
+image:
+  pullPolicy: IfNotPresent
+
+database:
+  source: local
+
+postgresql:
+  enabled: true
+
+networkPolicy:
+  ingressNamespace: kube-system # k3s 기본 Traefik 위치

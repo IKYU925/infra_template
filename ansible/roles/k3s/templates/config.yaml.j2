@@ -1,0 +1,19 @@
+# {{ ansible_managed }}
+token: "{{ k3s_token }}"
+node-ip: "{{ k3s_node_ip }}"
+flannel-iface: "{{ k3s_flannel_iface }}"
+{% if k3s_role == 'server' %}
+node-name: "{{ inventory_hostname }}"
+tls-san:
+  - "{{ k3s_server_ip }}"
+write-kubeconfig-mode: "0600"
+{% if k3s_server_disable | length > 0 %}
+disable:
+{% for item in k3s_server_disable %}
+  - "{{ item }}"
+{% endfor %}
+{% endif %}
+{% else %}
+node-name: "{{ inventory_hostname }}"
+server: "https://{{ k3s_server_ip }}:6443"
+{% endif %}

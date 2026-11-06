@@ -3,19 +3,29 @@ output "vpc_id" {
   value       = module.platform.vpc_id
 }
 
-output "app_instance_ids" {
-  description = "앱 EC2 인스턴스 ID"
-  value       = module.platform.app_instance_ids
+output "cluster_name" {
+  description = "EKS 클러스터 이름"
+  value       = module.platform.cluster_name
+}
+
+output "configure_kubectl" {
+  description = "kubectl 연결 명령"
+  value       = "aws eks update-kubeconfig --region ${var.region} --name ${module.platform.cluster_name}"
+}
+
+output "ecr_repository_url" {
+  description = "앱 이미지 ECR 주소"
+  value       = module.platform.ecr_repository_url
 }
 
 output "artifact_bucket_name" {
-  description = "아티팩트 버킷 (Ansible group_vars 의 ansible_aws_ssm_bucket_name 에 넣는다)"
+  description = "아티팩트 버킷"
   value       = module.platform.artifact_bucket_name
 }
 
-output "db_endpoint" {
-  description = "RDS 엔드포인트"
-  value       = module.platform.db_endpoint
+output "db_address" {
+  description = "RDS 호스트 이름"
+  value       = module.platform.db_address
 }
 
 output "db_master_secret_arn" {
