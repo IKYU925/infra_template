@@ -1,11 +1,9 @@
 ---
-# 전체 구성: 하드닝 -> Docker -> 앱 배포
-#   ansible-playbook -i inventories/dev playbooks/site.yml
+# 로컬 VM 전체 구성: 하드닝 -> k3s 설치
+#   Vagrant 가 VM 마다 자동으로 실행한다 (local/vagrant/Vagrantfile).
+#   직접 실행: ansible-playbook -i inventories/local playbooks/site.yml --limit <호스트>
 - name: Harden OS and SSH
   ansible.builtin.import_playbook: hardening.yml
 
-- name: Install Docker
-  ansible.builtin.import_playbook: docker.yml
-
-- name: Deploy application
-  ansible.builtin.import_playbook: app.yml
+- name: Install k3s
+  ansible.builtin.import_playbook: k3s.yml

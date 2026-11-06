@@ -1,0 +1,20 @@
+# app-of-apps: deploy/argocd/apps/dev 안의 Application 들을 만든다.
+#   kubectl apply -f deploy/argocd/dev-root.yaml   (make argocd-bootstrap ENV=dev 가 실행)
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: root
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/IKYU925/infra_template.git # TODO: 템플릿을 복사한 저장소
+    targetRevision: main
+    path: deploy/argocd/apps/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

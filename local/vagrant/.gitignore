@@ -1,0 +1,4 @@
+.vagrant/
+.k3s-token
+.kube/
+.image.tar

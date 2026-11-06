@@ -1,4 +1,4 @@
-# 하나의 환경(dev/prod)을 구성하는 표준 스택.
+# 하나의 환경(dev/prod)을 구성하는 표준 스택: VPC + EKS + RDS + S3 + ECR.
 # 모든 리소스는 검증된 terraform-aws-modules 모듈을 버전 고정해서 사용한다.
 # 버전 업데이트는 .github/dependabot.yml 이 PR 로 올려준다.
 
@@ -20,8 +20,6 @@ locals {
   private_subnets  = [for i, _ in local.azs : cidrsubnet(var.vpc_cidr, 8, i + 10)]
   database_subnets = [for i, _ in local.azs : cidrsubnet(var.vpc_cidr, 8, i + 20)]
 
-  app_ingress_cidrs = length(var.app_ingress_cidrs) > 0 ? var.app_ingress_cidrs : [var.vpc_cidr]
-
   tags = merge(var.tags, {
     Project     = var.project
     Environment = var.environment
@@ -42,6 +40,14 @@ module "vpc" {
   public_subnets   = local.public_subnets
   private_subnets  = local.private_subnets
   database_subnets = local.database_subnets
+
+  # AWS Load Balancer Controller 가 이 태그로 NLB/ALB 를 놓을 서브넷을 찾는다
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = "1"
+  }
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = "1"
+  }
 
   create_database_subnet_group = true
 
@@ -65,78 +71,23 @@ module "vpc" {
 }
 
 ################################################################################
-# Security Groups
+# Security Group (RDS)
 ################################################################################
-# 앱 서버는 패키지 설치와 SSM 접속을 위해 인터넷(443/80)으로 나가야 한다. 포트는 egress_rules 에서 443/80 으로 제한했다.
-#trivy:ignore:AVD-AWS-0104
-module "app_sg" {
-  source  = "terraform-aws-modules/security-group/aws"
-  version = "6.0.0"
-
-  name        = "${local.name}-app"
-  description = "App servers: HTTP/HTTPS from allowed CIDRs. SSH closed (use SSM)."
-  vpc_id      = module.vpc.vpc_id
-
-  ingress_rules = merge(
-    { for idx, cidr in local.app_ingress_cidrs : "http-${idx}" => {
-      description = "HTTP"
-      from_port   = 80
-      to_port     = 80
-      cidr_ipv4   = cidr
-    } },
-    { for idx, cidr in local.app_ingress_cidrs : "https-${idx}" => {
-      description = "HTTPS"
-      from_port   = 443
-      to_port     = 443
-      cidr_ipv4   = cidr
-    } },
-  )
-
-  # 아웃바운드는 필요한 포트만 연다.
-  #  - 443: SSM, AWS API, 컨테이너 레지스트리, 패키지 저장소
-  #  - 80 : Ubuntu apt 미러 (HTTP)
-  #  - 5432: DB 서브넷 (db_sg 를 참조하면 두 SG 가 서로 참조해 순환이 생기므로 CIDR 로 지정)
-  # 인터넷 대상 443/80 은 NAT 게이트웨이를 거친다. Trivy AWS-0104 예외는 보안팀 검토 대상.
-  egress_rules = merge(
-    {
-      https = {
-        description = "HTTPS to internet via NAT (SSM, AWS APIs, registries, packages)"
-        from_port   = 443
-        to_port     = 443
-        cidr_ipv4   = "0.0.0.0/0"
-      }
-      http = {
-        description = "HTTP to internet via NAT (apt mirrors)"
-        from_port   = 80
-        to_port     = 80
-        cidr_ipv4   = "0.0.0.0/0"
-      }
-    },
-    { for idx, cidr in local.database_subnets : "postgres-${idx}" => {
-      description = "PostgreSQL to database subnets"
-      from_port   = 5432
-      to_port     = 5432
-      cidr_ipv4   = cidr
-    } },
-  )
-
-  tags = local.tags
-}
-
+# VPC CNI 기본 설정에서 파드는 노드의 보안 그룹을 쓴다. 그래서 노드 SG 에서 오는 5432 만 연다.
 module "db_sg" {
   source  = "terraform-aws-modules/security-group/aws"
   version = "6.0.0"
 
   name        = "${local.name}-db"
-  description = "PostgreSQL only from app servers"
+  description = "PostgreSQL only from EKS nodes"
   vpc_id      = module.vpc.vpc_id
 
   ingress_rules = {
     postgres = {
-      description                  = "PostgreSQL from app SG"
+      description                  = "PostgreSQL from EKS node SG"
       from_port                    = 5432
       to_port                      = 5432
-      referenced_security_group_id = module.app_sg.id
+      referenced_security_group_id = module.eks.node_security_group_id
     }
   }
 
@@ -144,7 +95,7 @@ module "db_sg" {
 }
 
 ################################################################################
-# S3 (앱 아티팩트 + Ansible SSM 파일 전송용)
+# S3 (앱 아티팩트)
 ################################################################################
 module "artifact_bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
@@ -190,99 +141,6 @@ module "artifact_bucket" {
   ]
 
   tags = local.tags
-}
-
-################################################################################
-# IAM (EC2 인스턴스 역할에 붙일 최소 권한 정책)
-################################################################################
-module "app_s3_policy" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-policy"
-  version = "6.8.2"
-
-  name        = "${local.name}-app-artifacts"
-  description = "App instances: read/write the artifact bucket (also used by Ansible SSM transfer)"
-
-  policy = jsonencode({
-    Version = "2012-10-17"
-    Statement = [
-      {
-        Sid      = "ListBucket"
-        Effect   = "Allow"
-        Action   = ["s3:ListBucket", "s3:GetBucketLocation"]
-        Resource = module.artifact_bucket.s3_bucket_arn
-      },
-      {
-        Sid      = "ObjectRW"
-        Effect   = "Allow"
-        Action   = ["s3:GetObject", "s3:PutObject", "s3:DeleteObject"]
-        Resource = "${module.artifact_bucket.s3_bucket_arn}/*"
-      },
-      {
-        Sid      = "KmsForBucket"
-        Effect   = "Allow"
-        Action   = ["kms:Decrypt", "kms:GenerateDataKey"]
-        Resource = "*"
-        Condition = {
-          StringEquals = {
-            "kms:ViaService" = "s3.${data.aws_region.current.region}.amazonaws.com"
-          }
-        }
-      },
-    ]
-  })
-
-  tags = local.tags
-}
-
-################################################################################
-# EC2 (앱 서버, 프라이빗 서브넷 + SSM 접속)
-################################################################################
-module "app" {
-  source  = "terraform-aws-modules/ec2-instance/aws"
-  version = "6.4.1"
-
-  for_each = { for i in range(var.app_instance_count) : format("app-%02d", i + 1) => i }
-
-  name = "${local.name}-${each.key}"
-
-  ami_ssm_parameter  = var.app_ami_ssm_parameter
-  ignore_ami_changes = true
-  instance_type      = var.app_instance_type
-  subnet_id          = element(module.vpc.private_subnets, each.value)
-
-  create_security_group  = false
-  vpc_security_group_ids = [module.app_sg.id]
-
-  # SSH 키 없이 SSM Session Manager 로만 접속
-  create_iam_instance_profile = true
-  iam_role_name               = "${local.name}-${each.key}"
-  iam_role_description        = "App instance role (SSM + artifact bucket)"
-  iam_role_policies = {
-    ssm       = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
-    cw_agent  = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-    artifacts = module.app_s3_policy.arn
-  }
-
-  # IMDSv2 강제
-  metadata_options = {
-    http_endpoint               = "enabled"
-    http_tokens                 = "required"
-    http_put_response_hop_limit = 2
-  }
-
-  monitoring    = true
-  ebs_optimized = true
-
-  root_block_device = {
-    encrypted = true
-    type      = "gp3"
-    size      = var.app_root_volume_size
-  }
-
-  # Ansible 동적 인벤토리(amazon.aws.aws_ec2)가 이 태그로 그룹을 만든다
-  tags = merge(local.tags, {
-    Role = "app"
-  })
 }
 
 ################################################################################

@@ -1,0 +1,43 @@
+{{- if .Values.networkPolicy.enabled }}
+# 앱 파드에는 Ingress 컨트롤러(Traefik)에서 오는 트래픽만 들어올 수 있다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ include "app.name" . }}
+  labels:
+    {{- include "app.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "app.selectorLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Values.networkPolicy.ingressNamespace }}
+      ports:
+        - port: http
+{{- if .Values.postgresql.enabled }}
+---
+# Postgres 에는 앱 파드만 접속할 수 있다.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: postgresql
+  labels:
+    {{- include "app.postgresLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "app.postgresLabels" . | nindent 6 }}
+  policyTypes: ["Ingress"]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              {{- include "app.selectorLabels" . | nindent 14 }}
+      ports:
+        - port: postgres
+{{- end }}
+{{- end }}

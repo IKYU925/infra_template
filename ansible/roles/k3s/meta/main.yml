@@ -1,0 +1,13 @@
+---
+galaxy_info:
+  role_name: k3s
+  namespace: local
+  author: infra-team
+  description: Install k3s (server or agent) from the pinned release binary
+  license: MIT
+  min_ansible_version: "2.18"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+dependencies: []

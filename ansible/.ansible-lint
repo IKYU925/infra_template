@@ -2,5 +2,4 @@
 profile: production
 exclude_paths:
   - .galaxy/
-  - inventories/*/aws_ec2.yml
 skip_list: []

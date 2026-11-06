@@ -1,0 +1,25 @@
+# 풀스택팀 앱. 이미지 태그는 deploy/charts/app/values-prod.yaml 에서 바꾼다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: app
+  namespace: argocd
+  # Application 을 지우면 만든 리소스(NLB 등)도 함께 지운다
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/IKYU925/infra_template.git # TODO: 템플릿을 복사한 저장소
+    targetRevision: main
+    path: deploy/charts/app
+    helm:
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: app
+  syncPolicy:
+    # prod 앱은 자동 반영하지 않는다. Argo CD 화면에서 Sync 를 눌러 배포한다 (사람 승인)
+    syncOptions:
+      - CreateNamespace=true

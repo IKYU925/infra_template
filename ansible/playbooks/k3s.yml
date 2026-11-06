@@ -1,0 +1,19 @@
+---
+# k3s 설치. 서버를 먼저, 워커를 나중에 올린다.
+- name: Install k3s server (control plane)
+  hosts: k3s_server
+  become: true
+  tags: [k3s]
+  roles:
+    - role: k3s
+      vars:
+        k3s_role: server
+
+- name: Install k3s agents (workers)
+  hosts: k3s_agent
+  become: true
+  tags: [k3s]
+  roles:
+    - role: k3s
+      vars:
+        k3s_role: agent

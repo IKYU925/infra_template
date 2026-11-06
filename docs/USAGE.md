@@ -9,11 +9,11 @@ README 가 "무엇이 들어 있는지"를 설명한다면, 이 문서는 **처�
 |---|---|---|---|
 | 1 | 도구 설치 | 모두 | 한 번 |
 | 2 | 템플릿 값 바꾸기 (프로젝트 이름, 계정 ID 등) | 인프라 | 한 번 |
-| 3 | 로컬 환경 띄우기 | 풀스택 (모두) | 매일 |
+| 3 | 로컬 k3s 클러스터 띄우기 (Vagrant) | 모두 | 매일 |
 | 4 | AWS 계정 부트스트랩 (state 버킷, 잠금 테이블, CI 역할) | 인프라 | 계정당 한 번 |
 | 5 | GitHub 설정 (Environments, 변수, 승인자) | 인프라 + 보안 | 한 번 |
-| 6 | dev 배포 → 서버 설정(Ansible) | 인프라 | 변경 시 |
-| 7 | 일상 작업: 브랜치 → PR → plan 확인 → 병합 → dev 자동 반영 → prod 수동 반영 | 모두 | 매번 |
+| 6 | dev EKS 만들기 → Argo CD 설치 | 인프라 | 처음 한 번 |
+| 7 | 일상 작업: 브랜치 → PR → 검사·plan → 병합 → Argo CD 반영 | 모두 | 매번 |
 
 로컬만 쓸 사람(풀스택)은 1, 3단계만 하면 됩니다.
 
@@ -21,23 +21,42 @@ README 가 "무엇이 들어 있는지"를 설명한다면, 이 문서는 **처�
 
 ## 1. 도구 설치
 
-macOS (Homebrew) 기준입니다.
+### macOS (Apple Silicon / Intel)
 
 ```bash
-brew install terraform awscli tflint pre-commit
-brew install --cask docker session-manager-plugin   # Docker Desktop, SSM 접속 플러그인
+brew install --cask vagrant virtualbox     # VirtualBox 7.1 이상 (Apple Silicon 지원)
+brew install kubectl helm terraform awscli tflint pre-commit
 python3 -m venv .venv && source .venv/bin/activate
-pip install -r ansible/requirements.txt
-pre-commit install                                  # 커밋 전에 fmt/lint/시크릿 검사
+pip install -r ansible/requirements.txt    # ansible-lint 를 노트북에서 돌릴 때만
+pre-commit install
 ```
+
+Apple Silicon 에서 VirtualBox 가 잘 안 되면 VMware Fusion(무료)을 씁니다.
+
+```bash
+brew install --cask vmware-fusion vagrant-vmware-utility
+vagrant plugin install vagrant-vmware-desktop
+export VAGRANT_DEFAULT_PROVIDER=vmware_desktop
+```
+
+### Windows
+
+```powershell
+winget install Hashicorp.Vagrant Oracle.VirtualBox Kubernetes.kubectl Helm.Helm Hashicorp.Terraform Amazon.AWSCLI
+```
+
+- Ansible 은 노트북에 설치하지 않아도 됩니다. VM 안에서 실행됩니다.
+- `make` 가 없으면 이 문서의 명령을 직접 실행하면 됩니다 (`Makefile` 의 각 줄과 같습니다).
+- WSL2 나 Docker Desktop 때문에 Hyper-V 가 켜져 있으면 VirtualBox 가 느려질 수 있습니다. 처음에 한 번 `vagrant up` 이 끝까지 되는지 확인하세요.
+- 저장소는 `.gitattributes` 로 줄바꿈을 LF 로 고정합니다. 클론하기 전에 `git config --global core.autocrlf input` 을 해 두면 안전합니다.
 
 설치 확인:
 
 ```bash
+vagrant --version      # 2.4 이상
+kubectl version --client
+helm version           # v3
 terraform version      # 1.11.1 이상
-docker compose version
-ansible --version      # core 2.18 이상
-session-manager-plugin # "installed successfully" 문구가 나오면 정상
 ```
 
 ## 2. 템플릿 값 바꾸기 (인프라팀, 한 번)
@@ -45,41 +64,84 @@ session-manager-plugin # "installed successfully" 문구가 나오면 정상
 1. 프로젝트 이름 `myproject` 를 한 번에 바꿉니다.
 
    ```bash
-   grep -rl myproject terraform ansible | xargs sed -i '' 's/myproject/<우리프로젝트>/g'   # macOS
+   grep -rl myproject terraform deploy | xargs sed -i '' 's/myproject/<우리프로젝트>/g'   # macOS
    ```
 
 2. AWS 계정 ID 를 바꿉니다.
    - dev: `terraform/envs/dev/terraform.tfvars`, `terraform/bootstrap/dev.tfvars` 의 `111111111111`
    - prod: `terraform/envs/prod/terraform.tfvars`, `terraform/bootstrap/prod.tfvars` 의 `222222222222`
-3. `terraform/bootstrap/*.tfvars` 의 `github_repository` 를 실제 저장소(예: `IKYU925/infra_template`)로 바꿉니다.
-4. `.github/CODEOWNERS` 의 `@your-org/...` 를 실제 GitHub 팀이나 사용자로 바꿉니다.
-5. 리전이 서울(`ap-northeast-2`)이 아니면 `tfvars` 와 `ansible/inventories/*/aws_ec2.yml`, `group_vars` 의 리전을 함께 바꿉니다.
+3. `terraform/bootstrap/*.tfvars` 의 `github_repository` 를 실제 저장소로 바꿉니다.
+4. `terraform/envs/*/terraform.tfvars` 의 `eks_public_access_cidrs` 에 kubectl 을 쓸 곳의 공인 IP(`curl ifconfig.me` 결과 + `/32`)를, `eks_admin_principal_arns` 에 팀원 IAM 역할 ARN 을 넣습니다.
+5. `deploy/argocd/*-root.yaml`, `deploy/argocd/apps/*/{app,platform}.yaml` 의 `repoURL` 을 실제 저장소로 바꿉니다.
+6. `.github/CODEOWNERS` 의 `@your-org/...` 를 실제 GitHub 팀이나 사용자로 바꿉니다.
 
-## 3. 로컬 환경 (풀스택팀)
+## 3. 로컬 k3s 클러스터 (모두)
+
+### 3.1 띄우기
 
 ```bash
-make local-up            # 처음 실행 시 local/.env 를 자동으로 만든다 -> 비밀번호를 바꿔 두자
-open http://localhost:8080
-docker compose -f local/docker-compose.yml --env-file local/.env logs -f app
-make local-down
+make k3s-up        # = cd local/vagrant && vagrant up
 ```
 
-**우리 앱으로 바꾸기**: `local/.env` 의 `APP_IMAGE` 를 우리 이미지로 바꾸거나, `local/docker-compose.yml` 의 `app` 서비스에 `build: ../<앱 폴더>` 를 넣습니다. 앱 안에서 쓸 수 있는 값은 다음과 같습니다.
+처음 한 번은 박스 내려받기와 설치 때문에 10~15분 걸립니다. 각 VM 에서 다음이 자동으로 실행됩니다.
 
-| 환경 변수 | 값 | AWS 에서 대응 |
+1. VM 안에 Ansible 설치
+2. `ansible/playbooks/hardening.yml`: dev-sec OS/SSH 하드닝 (보안팀 기준선)
+3. `ansible/playbooks/k3s.yml`: k3s 설치. `local-cp-01` 이 컨트롤 플레인, `local-worker-01/02` 가 워커로 합류
+
+| VM | IP | 역할 | 기본 RAM |
+|---|---|---|---|
+| local-cp-01 | 192.168.56.10 | 컨트롤 플레인 | 2GB |
+| local-worker-01 | 192.168.56.11 | 워커 | 2GB |
+| local-worker-02 | 192.168.56.12 | 워커 | 2GB |
+
+노트북 사양에 맞게 줄일 수 있습니다: `K3S_WORKERS=1 K3S_WORKER_MEMORY=1536 vagrant up`
+
+### 3.2 kubectl 연결
+
+컨트롤 플레인이 kubeconfig 를 `local/vagrant/.kube/config` 에 내보냅니다.
+
+```bash
+export KUBECONFIG=$PWD/local/vagrant/.kube/config        # Windows: $env:KUBECONFIG="$PWD\local\vagrant\.kube\config"
+kubectl get nodes -o wide
+```
+
+### 3.3 앱 배포
+
+```bash
+make local-deploy                 # local/.env 로 DB Secret 생성 -> Helm 으로 앱 + Postgres 배포
+curl http://192.168.56.10/        # Traefik(Ingress) 를 거쳐 앱이 응답
+```
+
+**우리 앱으로 바꾸기**: 이미지를 노트북에서 빌드하고 VM 에 넣은 뒤, 차트 값을 바꿔 배포합니다. ECR 은 쓰지 않습니다.
+
+```bash
+docker build -t myapp:dev ../my-app
+make local-image-import IMAGE=myapp:dev
+helm upgrade --install app deploy/charts/app -n app -f deploy/charts/app/values-local.yaml \
+  --set image.repository=myapp --set image.tag=dev --set containerPort=3000
+```
+
+Apple Silicon 노트북에서 빌드한 이미지는 arm64 라서 같은 노트북의 VM 에서 바로 돌아갑니다. dev/prod(EKS)는 amd64 이므로 CI 에서는 `docker buildx build --platform linux/amd64,linux/arm64` 로 빌드합니다.
+
+앱 안에서 쓸 수 있는 값:
+
+| 환경 변수 | local | dev / prod |
 |---|---|---|
-| `DATABASE_URL` | `postgresql://app:<비번>@postgres:5432/app` | RDS 엔드포인트 + Secrets Manager |
-| `AWS_ENDPOINT_URL` | `http://aws:4566` (floci 를 켰을 때) | 설정 안 함 (실제 AWS) |
-| `AWS_REGION` | `ap-northeast-2` | 같음 |
+| `DATABASE_URL` | `postgresql://app:<비번>@postgresql:5432/app` (클러스터 안 Postgres) | RDS 주소 + Secrets Manager 비밀번호 (External Secrets 가 생성) |
+| AWS 권한 | 없음 (필요하면 `make local-aws-up` 으로 floci) | Pod Identity 로 아티팩트 버킷 읽기/쓰기 |
 
-**S3 같은 AWS API 가 필요하면**:
+### 3.4 끄기와 지우기
 
 ```bash
-make local-aws-up                                  # floci 실행 + terraform/envs/local apply
-aws --endpoint-url http://localhost:4566 s3 ls     # myproject-local-artifacts 버킷이 보이면 성공
+make k3s-halt       # VM 끄기 (다음 make k3s-up 은 1~2분)
+make k3s-destroy    # VM 삭제 (토큰과 kubeconfig 는 local/vagrant 에 남는다)
 ```
 
-DB 에 직접 붙기: `psql postgresql://app:<비번>@localhost:5432/app`
+### 3.5 (선택) 앱만 빠르게 돌리기
+
+클러스터 없이 앱 코드만 확인할 때는 기존 Docker Compose 를 씁니다: `make local-up` → http://localhost:8080, `make local-down`.
+S3 같은 AWS API 가 필요하면 `make local-aws-up` (floci + `terraform/envs/local`).
 
 ## 4. AWS 계정 부트스트랩 (인프라팀, 계정당 한 번)
 
@@ -122,81 +184,87 @@ DB 에 직접 붙기: `psql postgresql://app:<비번>@localhost:5432/app`
 
 추가로 권장하는 설정:
 
-- **Settings → Branches → Add rule (`main`)**: PR 필수, 승인 1명 이상, 상태 검사 필수(`fmt`, `validate (...)`, `trivy ...`, `checkov ...`, `ansible-lint + syntax-check`), CODEOWNERS 리뷰 필수
+- **Settings → Branches → Add rule (`main`)**: PR 필수, 승인 1명 이상, 상태 검사 필수(`fmt`, `validate (...)`, `trivy ...`, `checkov ...`, `ansible-lint + syntax-check`, `helm lint + kubeconform`), CODEOWNERS 리뷰 필수
 - **Settings → Code security**: Dependabot alerts / security updates 켜기
 - 스캔 결과를 **Security → Code scanning** 탭에서 보려면 공개 저장소이거나 GitHub Code Security(유료)가 있어야 합니다. 비공개 저장소에서는 업로드 단계가 경고로만 끝나고, 결과는 워크플로 실행 화면의 **Artifacts**(`trivy-sarif`, `checkov-sarif`)와 로그에서 볼 수 있습니다. HIGH/CRITICAL 판정은 업로드와 상관없이 동작합니다.
 
 변수를 넣기 전에는 plan/apply 단계가 안내 메시지만 남기고 건너뜁니다.
 
-## 6. dev 첫 배포와 서버 설정 (인프라팀)
+## 6. dev 첫 배포 (인프라팀)
 
-### 6.1 인프라 만들기
+### 6.1 인프라 만들기 (Terraform)
 
 ```bash
 make tf-init  ENV=dev
-make tf-plan  ENV=dev     # 생성될 리소스 확인 (VPC, NAT, EC2, RDS, S3, IAM ...)
-make tf-apply ENV=dev     # RDS 생성 때문에 10~15분 걸린다
+make tf-plan  ENV=dev     # VPC, NAT, EKS, 노드그룹, RDS, ECR, S3, Pod Identity 역할
+make tf-apply ENV=dev     # EKS + RDS 생성 때문에 20~30분 걸린다
 terraform -chdir=terraform/envs/dev output
 ```
 
-처음 init 하고 나면 `terraform/envs/dev/.terraform.lock.hcl` 이 생깁니다. 다른 OS 에서도 같은 프로바이더를 쓰도록 다음 명령을 실행한 뒤 커밋합니다.
+처음 init 하고 나면 `.terraform.lock.hcl` 이 생깁니다. 다른 OS 에서도 같은 프로바이더를 쓰도록 다음을 실행한 뒤 커밋합니다.
 
 ```bash
 terraform -chdir=terraform/envs/dev providers lock -platform=linux_amd64 -platform=darwin_arm64 -platform=darwin_amd64
 ```
 
-### 6.2 서버 설정 (Ansible)
+### 6.2 출력값을 deploy/ 에 옮기기
 
-1. `artifact_bucket_name` 출력값을 `ansible/inventories/dev/group_vars/all/main.yml` 의 `ansible_aws_ssm_bucket_name` 에 넣습니다.
-2. 실행합니다.
+| terraform output | 넣을 곳 |
+|---|---|
+| `vpc_id` | `deploy/argocd/apps/dev/aws-load-balancer-controller.yaml` 의 `vpcId` |
+| `cluster_name` | 같은 파일의 `clusterName` (기본 `myproject-dev`) |
+| `ecr_repository_url` | `deploy/charts/app/values-dev.yaml` 의 `image.repository` |
+| `db_address` | `values-dev.yaml` 의 `database.external.host` |
+| `db_master_secret_arn` | `values-dev.yaml` 의 `database.external.remoteSecret` |
 
-   ```bash
-   make ansible-deps                      # 롤/컬렉션 설치 (최초 1회, requirements.yml 바뀔 때)
-   cd ansible
-   ansible-inventory -i inventories/dev --graph          # app 그룹에 i-xxxx 가 보이면 성공
-   ansible -i inventories/dev all -m ansible.builtin.ping
-   ansible-playbook -i inventories/dev playbooks/site.yml --check --diff   # 미리보기
-   ansible-playbook -i inventories/dev playbooks/site.yml --diff          # 적용
-   ```
+`values-dev.yaml` 의 `ingress.host` 에 실제 도메인을 넣고, `deploy/platform/cluster-issuer.yaml` 의 이메일을 바꿉니다. 이 변경을 PR 로 올려 `main` 에 병합합니다 (Argo CD 는 `main` 을 봅니다).
 
-3. 일부만 실행할 때는 태그를 씁니다: `--tags app` (앱만 재배포), `--tags hardening`, `--tags docker`
-
-**앱 설정 바꾸기**: `inventories/<env>/group_vars/all/main.yml` 의 `app_image`, `app_port`, `app_env` 를 바꾸고 `--tags app` 으로 다시 실행합니다.
-
-**비밀값 넣기**: `app_env` 에 비밀번호를 평문으로 넣지 말고 둘 중 하나를 씁니다.
+### 6.3 Argo CD 설치 (클러스터당 한 번)
 
 ```bash
-# 1) ansible-vault
-ansible-vault create inventories/dev/group_vars/all/vault.yml   # vault_db_password: ...
-#    main.yml 에서 app_env: { DB_PASSWORD: "{{ vault_db_password }}" }
-ansible-playbook -i inventories/dev playbooks/site.yml --ask-vault-pass
-
-# 2) AWS Secrets Manager 에서 바로 읽기 (RDS 마스터 비밀번호 등)
-#    app_env: { DB_PASSWORD: "{{ (lookup('amazon.aws.secretsmanager_secret', '<secret arn>', region='ap-northeast-2') | from_json).password }}" }
+make argocd-bootstrap ENV=dev
 ```
 
-서버에 직접 들어가 볼 때: `aws ssm start-session --target <instance-id>`
+이 명령은 kubeconfig 를 EKS 로 바꾸고, Argo CD 를 Helm 으로 설치한 뒤 `deploy/argocd/dev-root.yaml` 을 적용합니다. 그러면 Argo CD 가 `deploy/argocd/apps/dev/` 의 Application 을 순서대로 설치합니다.
 
-### 6.3 prod
+| 순서(sync-wave) | Application | 하는 일 |
+|---|---|---|
+| -3 | aws-load-balancer-controller, cert-manager, external-secrets | NLB 생성, 인증서, Secrets Manager 연동 |
+| -2 | traefik | Ingress 컨트롤러 + 인터넷용 NLB |
+| -1 | platform | ClusterSecretStore, ClusterIssuer (`deploy/platform`) |
+| 0 | app | 우리 앱 (`deploy/charts/app` + `values-dev.yaml`) |
 
-dev 와 같은 순서이며 `ENV=prod` 로 바꿉니다. 단, 평소에는 로컬에서 prod 를 apply 하지 않고 7단계의 GitHub Actions 수동 실행(승인 필요)으로 반영합니다.
+저장소가 비공개라면 Argo CD 가 읽을 수 있게 먼저 등록합니다 (GitHub 의 읽기 전용 Deploy key 권장).
+
+```bash
+kubectl -n argocd port-forward svc/argocd-server 8443:443        # https://localhost:8443
+kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d   # admin 비밀번호
+# 화면의 Settings -> Repositories -> Connect Repo 에서 SSH 키 등록 (repoURL 도 git@github.com:... 로 맞춘다)
+```
+
+DNS: `kubectl -n traefik get svc traefik` 의 EXTERNAL-IP(NLB 주소)를 도메인의 CNAME 으로 연결하면 cert-manager 가 인증서를 발급합니다.
+
+### 6.4 prod
+
+같은 순서를 `ENV=prod` 로 반복합니다. 평소 prod 인프라 변경은 로컬이 아니라 7단계의 GitHub Actions 수동 실행(승인 필요)으로 반영합니다. prod 의 `app` Application 은 자동 동기화가 꺼져 있어서, Argo CD 화면에서 변경 내용(Diff)을 확인하고 **Sync** 를 눌러야 배포됩니다.
 
 ## 7. 일상 작업 흐름 (모두)
 
 ```text
-브랜치 생성 -> 수정 -> PR -> 자동 검사 + plan 확인 -> 리뷰/승인 -> main 병합
-          -> dev 자동 apply -> (필요 시) Actions 에서 prod 수동 실행 -> 승인자 승인 -> prod apply
+인프라 변경 : 브랜치 -> PR -> 검사 + plan 확인 -> 병합 -> dev 자동 apply -> (Actions 수동 실행 + 승인) prod apply
+앱 배포     : 이미지 ECR 푸시 -> values-<env>.yaml 의 image.tag 변경 PR -> 병합 -> Argo CD 가 dev 자동 배포 / prod 는 Sync 클릭
 ```
 
 1. `git switch -c feat/<내용>` 으로 브랜치를 만들고 수정합니다. 커밋할 때 pre-commit 이 fmt·lint·시크릿 검사를 먼저 돌립니다.
-2. PR 을 열면 다음이 자동으로 실행됩니다.
+2. 바꾼 내용은 로컬 k3s 에서 먼저 확인합니다 (`make local-deploy`, `make k8s-lint`).
+3. PR 을 열면 다음이 자동으로 실행됩니다.
    - `terraform`: fmt, validate, tflint, dev/prod plan (결과는 각 plan 작업의 **Summary** 탭)
-   - `security-scan`: Trivy, Checkov
+   - `k8s`: Helm lint, local/dev/prod 렌더링 + 스키마 검사
    - `ansible`: syntax-check, ansible-lint
-3. plan 에서 **예상하지 못한 destroy/replace 가 없는지** 확인하고 리뷰를 받습니다. CODEOWNERS 에 따라 담당 팀이 자동으로 리뷰어로 지정됩니다.
-4. `main` 에 병합하면 dev 에 자동으로 apply 됩니다.
-5. prod 반영: **Actions → terraform → Run workflow → environment: prod** 를 실행하고, 지정된 승인자가 승인하면 apply 됩니다.
-6. 서버 설정이 바뀌었으면 Ansible 을 실행합니다 (6.2).
+   - `security-scan`: Trivy, Checkov
+4. plan 에서 **예상하지 못한 destroy/replace 가 없는지** 확인하고 리뷰를 받습니다.
+5. `main` 에 병합하면 dev 에 자동 반영됩니다 (Terraform 은 Actions, 클러스터 안은 Argo CD).
+6. prod 인프라: **Actions → terraform → Run workflow → environment: prod** 를 실행하고 승인자가 승인합니다.
 
 ## 8. 보안팀 가이드
 
@@ -206,8 +274,10 @@ dev 와 같은 순서이며 `ENV=prod` 로 바꿉니다. 단, 평소에는 로�
 | 로컬에서 스캔 | `make scan` (Docker 필요) |
 | 예외 허용 (전체) | `.checkov.yaml` 의 `skip-check` 에 ID 와 **사유 주석** 추가 |
 | 예외 허용 (리소스 하나) | 리소스 블록 안에 `#checkov:skip=CKV_AWS_xxx:사유` |
-| Trivy 예외 | 리소스 위에 `#trivy:ignore:AVD-AWS-xxxx` 또는 저장소 루트에 `.trivyignore` |
-| OS/SSH 기준선 변경 | `ansible/inventories/<env>/group_vars/all/hardening.yml` ([변수 목록](https://github.com/dev-sec/ansible-collection-hardening)) |
+| Trivy 예외 | 리소스 위에 `#trivy:ignore:AVD-AWS-xxxx` 또는 저장소 루트에 `.trivyignore`. 현재 예외: EKS 공개 엔드포인트(IP 제한), 노드 아웃바운드 (`terraform/modules/platform/eks.tf`) |
+| OS/SSH 기준선 실습 | `ansible/inventories/local/group_vars/all/hardening.yml` 수정 후 `vagrant provision` ([변수 목록](https://github.com/dev-sec/ansible-collection-hardening)) |
+| 파드 AWS 권한 검토 | `terraform/modules/platform/eks.tf` 의 Pod Identity 모듈들 |
+| EKS API 를 비공개로 | `eks.tf` 에서 `endpoint_public_access = false` 후 SSM 을 거쳐 접속 |
 | CI apply 권한 줄이기 | `terraform/bootstrap` 의 `apply_role_policy_arns` 를 최소 권한 정책으로 교체 후 bootstrap 재적용 |
 
 위 파일들은 CODEOWNERS 로 보안팀 리뷰가 필수입니다.
@@ -215,25 +285,33 @@ dev 와 같은 순서이며 `ENV=prod` 로 바꿉니다. 단, 평소에는 로�
 ## 9. 정리(삭제)
 
 ```bash
-# dev 전체 삭제
+# 1) 클러스터 안의 NLB 를 먼저 지운다 (안 지우면 VPC 삭제가 막힌다)
+kubectl -n argocd delete application root               # 자식 Application 을 다시 만들지 않게 먼저 지운다
+kubectl -n argocd delete application app traefik --wait  # finalizer 가 Service 와 NLB 까지 지운다
+kubectl -n traefik get svc                               # 비어 있으면 OK
+# 2) 인프라 삭제
 terraform -chdir=terraform/envs/dev destroy
+# 로컬
+make k3s-destroy
 ```
 
-- prod 는 RDS 삭제 보호가 켜져 있어 바로 지워지지 않습니다. `db_deletion_protection = false` 로 바꿔 apply 한 뒤 destroy 합니다. 삭제 시 최종 스냅샷이 남습니다.
-- 부트스트랩(state 버킷, 잠금 테이블)은 모든 환경을 지운 다음 마지막에 지웁니다. 잠금 테이블도 삭제 보호가 켜져 있습니다.
-- 로컬 데이터까지 지우려면 `docker compose -f local/docker-compose.yml --env-file local/.env down -v`
+- prod 는 RDS 삭제 보호가 켜져 있어 바로 지워지지 않습니다. `db_deletion_protection = false` 로 바꿔 apply 한 뒤 destroy 합니다.
+- 부트스트랩(state 버킷, 잠금 테이블)은 모든 환경을 지운 다음 마지막에 지웁니다.
 
 ## 10. 문제 해결
 
 | 증상 | 원인과 해결 |
 |---|---|
-| `Warning: Deprecated Parameter "dynamodb_table"` | 정상입니다. Terraform 1.10+ 의 안내 메시지이며 동작에 문제없습니다. 전환 방법은 README 의 4.3 절을 보세요. |
+| `vagrant up` 이 박스를 못 찾음 (`architecture`) | Vagrant 2.4 미만입니다. 2.4 이상으로 올리세요. 다른 박스는 `K3S_BOX=<박스>` 로 지정합니다. |
+| VirtualBox host-only 네트워크 오류 | VirtualBox 7 은 `192.168.56.0/21` 만 허용합니다. IP 를 바꿨다면 이 범위 안으로 두세요. Apple Silicon 에서 계속 실패하면 VMware Fusion(1장)으로 바꿉니다. |
+| 워커가 `NotReady` 거나 안 보임 | 컨트롤 플레인을 먼저 올려야 합니다. `vagrant provision local-worker-01` 로 다시 실행하고, 컨트롤 플레인에서 `sudo journalctl -u k3s -f` 를 확인합니다. |
+| 파드끼리 통신이 안 됨 | 하드닝이 IP 포워딩을 껐을 수 있습니다. `hardening.yml` 의 `sysctl_overwrite` 에 `net.ipv4.ip_forward: 1` 이 있는지 확인합니다. |
+| `vagrant ssh` 가 안 됨 (하드닝 후) | `hardening.yml` 의 SSH 설정을 확인합니다. 급하면 `group_vars/all/main.yml` 에서 `apply_ssh_hardening: false` 후 VM 을 다시 만듭니다. |
+| 로컬 이미지가 `ErrImagePull` | 모든 노드에 넣었는지 확인합니다 (`make local-image-import`). `image.pullPolicy` 가 `IfNotPresent` 인지 확인합니다. |
+| Windows 에서 스크립트 오류 (`\r`) | CRLF 로 받았습니다. 1장 Windows 의 마지막 항목을 보세요. |
+| `kubectl` 이 EKS 에 `Unauthorized` | 내 IAM 역할이 `eks_admin_principal_arns` 에 없거나 IP 가 `eks_public_access_cidrs` 에 없습니다. |
+| Traefik 서비스 EXTERNAL-IP 가 `<pending>` | aws-load-balancer-controller 가 아직 안 떴거나 `vpcId` 가 틀렸습니다. `kubectl -n kube-system logs deploy/aws-load-balancer-controller` |
+| 앱 파드가 `CreateContainerConfigError` (app-db 없음) | dev/prod: `database.external.*` 값과 `kubectl get externalsecret -n app` 상태를 확인합니다. local: `make local-secret` |
 | `Error acquiring the state lock` | 다른 사람이나 CI 가 실행 중입니다. 끝나길 기다리세요. 중단된 작업이 확실할 때만 `terraform force-unlock <ID>` |
 | `AccessDenied ... allowed_account_ids` | 다른 계정으로 로그인했습니다. `aws sts get-caller-identity` 로 확인하세요. |
 | CI plan 이 "건너뜁니다" 로 끝남 | 해당 Environment 에 `AWS_PLAN_ROLE_ARN` 변수가 없습니다 (5단계). |
-| CI 에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | bootstrap 의 `github_repository` 가 실제 저장소와 다르거나, apply 를 Environment 밖에서 실행했습니다. |
-| `ansible-inventory --graph` 에 호스트가 없음 | AWS 로그인 상태, 리전, `tag:Project` 값(`aws_ec2.yml`)을 확인하세요. 인스턴스가 running 이어야 합니다. |
-| Ansible `SSM ... TargetNotConnected` | 인스턴스가 막 생성돼 SSM 에이전트가 아직 등록 전입니다. 2~3분 뒤 다시 시도하거나 Systems Manager → Fleet Manager 에서 상태를 확인하세요. |
-| Ansible S3 업로드 오류 | `ansible_aws_ssm_bucket_name` 이 Terraform 출력과 같은지 확인하세요. |
-| 로컬 4566 포트 충돌 | floci 와 LocalStack 을 동시에 켰습니다. 하나만 켜세요. |
-| `make local-up` 에서 `POSTGRES_PASSWORD` 오류 | `local/.env` 가 없거나 값이 비었습니다. `cp local/.env.example local/.env` |

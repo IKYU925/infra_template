@@ -1,0 +1,105 @@
+# -*- mode: ruby -*-
+# 로컬 k3s 클러스터: 컨트롤 플레인 1대 + 워커 2대 (Ubuntu 24.04)
+#
+#   cd local/vagrant && vagrant up        # 처음 한 번 10~15분
+#   export KUBECONFIG=$PWD/.kube/config   # Windows PowerShell: $env:KUBECONFIG="$PWD\.kube\config"
+#   kubectl get nodes
+#
+# 노트북 사양에 맞게 환경 변수로 바꿀 수 있다.
+#   K3S_WORKERS=1 vagrant up          # 워커 수 (0~2, 인벤토리에 있는 만큼)
+#   K3S_CP_MEMORY=2048 K3S_WORKER_MEMORY=1536 vagrant up
+#   VAGRANT_DEFAULT_PROVIDER=vmware_desktop vagrant up   # VirtualBox 대신 VMware Fusion/Workstation
+#
+# 같은 Vagrantfile 이 macOS(Apple Silicon/Intel)와 Windows 에서 동작하도록
+#  - 박스는 arm64/amd64 를 모두 제공하는 bento/ubuntu-24.04 를 쓰고, 아키텍처는 Vagrant 가 고른다.
+#  - Ansible 은 노트북이 아니라 각 VM 안에서 실행한다 (ansible_local). Windows 에 Ansible 이 없어도 된다.
+
+require "securerandom"
+
+Vagrant.require_version ">= 2.4.0"
+
+BOX           = ENV.fetch("K3S_BOX", "bento/ubuntu-24.04")
+WORKERS       = Integer(ENV.fetch("K3S_WORKERS", "2"))
+CP_MEMORY     = Integer(ENV.fetch("K3S_CP_MEMORY", "2048"))
+WORKER_MEMORY = Integer(ENV.fetch("K3S_WORKER_MEMORY", "2048"))
+CPUS          = Integer(ENV.fetch("K3S_CPUS", "2"))
+
+# VirtualBox 7 의 host-only 네트워크는 192.168.56.0/21 만 허용한다.
+# 이 IP 는 ansible/inventories/local/hosts.yml 과 같아야 한다.
+SERVER_IP = "192.168.56.10"
+NODES = [{ name: "local-cp-01", ip: SERVER_IP, memory: CP_MEMORY }] +
+        (1..WORKERS).map { |i| { name: format("local-worker-%02d", i), ip: "192.168.56.#{10 + i}", memory: WORKER_MEMORY } }
+
+raise "K3S_WORKERS 는 0~2 사이여야 합니다 (인벤토리에 워커 2대까지 정의됨)" unless (0..2).cover?(WORKERS)
+
+# 클러스터 합류 토큰. 처음 실행할 때 만들어 .k3s-token 에 저장한다 (git 에 올리지 않음).
+TOKEN_FILE = File.join(__dir__, ".k3s-token")
+File.write(TOKEN_FILE, SecureRandom.hex(32)) unless File.exist?(TOKEN_FILE)
+K3S_TOKEN = File.read(TOKEN_FILE).strip
+
+ANSIBLE_CORE_VERSION = "2.21.6"
+
+Vagrant.configure("2") do |config|
+  config.vm.box = BOX
+  config.vm.box_check_update = false
+
+  # 저장소 루트를 VM 의 /vagrant 로 공유한다 (Ansible 코드, kubeconfig 내보내기)
+  config.vm.synced_folder "../..", "/vagrant"
+
+  config.vm.provider "virtualbox" do |vb|
+    vb.cpus = CPUS
+    vb.linked_clone = true
+  end
+
+  config.vm.provider "vmware_desktop" do |vm|
+    vm.cpus = CPUS
+    vm.linked_clone = true
+  end
+
+  # VM 안에 Ansible 설치 (Ubuntu 24.04 는 시스템 pip 설치를 막으므로 venv 사용)
+  config.vm.provision "ansible-install", type: "shell", inline: <<~SHELL
+    set -euo pipefail
+    if [ ! -x /opt/ansible/bin/ansible-playbook ]; then
+      export DEBIAN_FRONTEND=noninteractive
+      apt-get update -qq
+      apt-get install -y -qq python3-venv
+      python3 -m venv /opt/ansible
+      /opt/ansible/bin/pip install -q "ansible-core==#{ANSIBLE_CORE_VERSION}"
+      ln -sf /opt/ansible/bin/ansible* /usr/local/bin/
+    fi
+  SHELL
+
+  NODES.each do |node|
+    config.vm.define node[:name] do |machine|
+      machine.vm.hostname = node[:name]
+      machine.vm.network "private_network", ip: node[:ip]
+
+      machine.vm.provider "virtualbox" do |vb|
+        vb.name = "infra-#{node[:name]}"
+        vb.memory = node[:memory]
+      end
+      machine.vm.provider "vmware_desktop" do |vm|
+        vm.vmx["memsize"] = node[:memory].to_s
+      end
+
+      # 각 VM 이 자기 자신에게 site.yml(하드닝 -> k3s)을 실행한다.
+      # 서버가 먼저 만들어지고, 워커는 그 뒤에 서버에 합류한다 (vagrant up 은 순서대로 실행).
+      machine.vm.provision "ansible", type: "ansible_local" do |ansible|
+        ansible.install = false
+        ansible.provisioning_path = "/vagrant/ansible"
+        ansible.config_file = "/vagrant/ansible/ansible.cfg"
+        ansible.inventory_path = "inventories/local/hosts.yml"
+        ansible.galaxy_role_file = "requirements.yml"
+        # ansible.cfg 의 collections_path(.galaxy/collections)에 설치한다
+        ansible.galaxy_command = "ansible-galaxy collection install -r %{role_file} -p /vagrant/ansible/.galaxy/collections"
+        ansible.playbook = "playbooks/site.yml"
+        ansible.limit = node[:name]
+        ansible.extra_vars = {
+          k3s_token: K3S_TOKEN,
+          k3s_kubeconfig_export_path: "/vagrant/local/vagrant/.kube/config",
+          ansible_python_interpreter: "/usr/bin/python3",
+        }
+      end
+    end
+  end
+end

@@ -1,0 +1,119 @@
+---
+- name: Check required variables
+  ansible.builtin.assert:
+    that:
+      - k3s_role in ['server', 'agent']
+      - k3s_token | length >= 16
+      - k3s_node_ip | length > 0
+      - k3s_server_ip | length > 0
+    fail_msg: k3s_role, k3s_token(16자 이상), k3s_node_ip, k3s_server_ip 를 확인하세요.
+    quiet: true
+
+- name: Load kernel modules for container networking
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+    persistent: present
+  loop: [overlay, br_netfilter]
+
+- name: Set sysctl for Kubernetes networking
+  ansible.posix.sysctl:
+    name: "{{ item }}"
+    value: "1"
+    sysctl_file: /etc/sysctl.d/90-k3s.conf
+    reload: true
+  loop:
+    - net.ipv4.ip_forward
+    - net.bridge.bridge-nf-call-iptables
+    - net.bridge.bridge-nf-call-ip6tables
+
+- name: Download k3s binary (checksum verified)
+  ansible.builtin.get_url:
+    url: "{{ k3s_release_url }}/{{ k3s_binary_name }}"
+    checksum: "sha256:{{ k3s_release_url }}/sha256sum-{{ k3s_arch }}.txt"
+    dest: /usr/local/bin/k3s
+    owner: root
+    group: root
+    mode: "0755"
+  notify: Restart k3s
+
+- name: Link kubectl, crictl, ctr to k3s
+  ansible.builtin.file:
+    src: /usr/local/bin/k3s
+    dest: "/usr/local/bin/{{ item }}"
+    state: link
+  loop: [kubectl, crictl, ctr]
+
+- name: Find the network interface that has the node IP
+  ansible.builtin.shell: |
+    set -o pipefail
+    ip -o -4 addr show | awk -v ip="{{ k3s_node_ip }}" '{ split($4, a, "/"); if (a[1] == ip) print $2 }'
+  args:
+    executable: /bin/bash
+  register: k3s_iface_cmd
+  changed_when: false
+  failed_when: k3s_iface_cmd.stdout | length == 0
+
+- name: Use that interface for the pod network (Flannel)
+  ansible.builtin.set_fact:
+    k3s_flannel_iface: "{{ k3s_iface_cmd.stdout_lines | first }}"
+
+- name: Create k3s config directory
+  ansible.builtin.file:
+    path: /etc/rancher/k3s
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+- name: Write k3s config (token included, root only)
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/k3s/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart k3s
+
+- name: Install systemd unit
+  ansible.builtin.template:
+    src: k3s.service.j2
+    dest: "/etc/systemd/system/{{ k3s_service_name }}.service"
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart k3s
+
+- name: Enable and start k3s
+  ansible.builtin.systemd_service:
+    name: "{{ k3s_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Apply pending restarts before checking the cluster
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for this node to be Ready (server only)
+  ansible.builtin.command: k3s kubectl wait --for=condition=Ready node/{{ inventory_hostname }} --timeout=300s
+  changed_when: false
+  when: k3s_role == 'server'
+
+- name: Export kubeconfig for the host machine
+  when:
+    - k3s_role == 'server'
+    - k3s_kubeconfig_export_path | length > 0
+  block:
+    - name: Read kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/k3s/k3s.yaml
+      register: k3s_kubeconfig
+
+    - name: Write kubeconfig with the server IP
+      ansible.builtin.copy:
+        content: >-
+          {{ k3s_kubeconfig.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ k3s_server_ip ~ ':6443')
+             | replace(': default', ': k3s-local') }}
+        dest: "{{ k3s_kubeconfig_export_path }}"
+        mode: "0600"

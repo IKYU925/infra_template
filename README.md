@@ -1,200 +1,149 @@
 # infra_template
 
 풀스택·보안·인프라 세 팀이 함께 쓰는 **인프라 구성 자동화 템플릿**입니다.
-Terraform 으로 AWS 리소스를 만들고, Ansible 로 서버를 설정하며, GitHub Actions 가 PR 마다 검사·plan·보안 스캔을 돌립니다.
+운영(dev/prod)은 AWS **EKS**, 로컬은 노트북의 **Vagrant VM 3대 + k3s** 로 비슷한 Kubernetes 환경을 만듭니다.
+Terraform 이 AWS 리소스를, Ansible 이 로컬 VM(하드닝 + k3s 설치)을, Helm 과 Argo CD 가 클러스터 안의 앱을 맡습니다.
 
-> **처음 쓰신다면 [사용 가이드(docs/USAGE.md)](docs/USAGE.md) 를 순서대로 따라 하세요.** 설치부터 GitHub 설정, 배포, 일상 작업 흐름, 문제 해결까지 단계별로 정리돼 있습니다.
+> **처음 쓰신다면 [사용 가이드(docs/USAGE.md)](docs/USAGE.md) 를 순서대로 따라 하세요.**
 
-| 환경 | 어디서 | 무엇으로 |
-|---|---|---|
-| **local** | 개발자 PC | Docker Compose (postgres + app), 선택으로 floci / LocalStack 로컬 AWS |
-| **dev** | AWS (dev 계정) | Terraform `envs/dev` + Ansible `inventories/dev` |
-| **prod** | AWS (prod 계정) | Terraform `envs/prod` + Ansible `inventories/prod` |
+| 환경 | 어디서 | 클러스터 | 배포 |
+|---|---|---|---|
+| **local** | 개발자 노트북 | Vagrant VM 3대 (컨트롤 플레인 1 + 워커 2) 위 k3s | `helm` 으로 직접 (`make local-deploy`) |
+| **dev** | AWS (dev 계정) | EKS, 관리형 노드 2대 | Argo CD 자동 동기화 |
+| **prod** | AWS (prod 계정) | EKS, 관리형 노드 3대 (AZ 3개) | Argo CD, 앱은 **수동 Sync (사람 승인)** |
 
 ---
 
-## 1. 폴더 구조
+## 1. 로컬과 운영이 같은 점, 다른 점
+
+똑같이 만들 수는 없으니, **앱이 보는 환경은 같게** 하고 AWS 에만 있는 부분은 비슷한 것으로 바꿨습니다.
+
+| 항목 | local (Vagrant + k3s) | dev / prod (EKS) |
+|---|---|---|
+| Kubernetes 버전 | k3s `v1.36.6+k3s1` | EKS `1.36` (같은 마이너) |
+| 노드 OS | Ubuntu 24.04 VM + Ansible 하드닝(dev-sec) | AWS 관리형 AL2023 |
+| Ingress | Traefik (k3s 기본) | Traefik + NLB (AWS Load Balancer Controller) |
+| TLS | 없음 (HTTP) | cert-manager + Let's Encrypt |
+| 앱 배포 | 같은 Helm 차트 `deploy/charts/app` + `values-local.yaml` | 같은 차트 + `values-dev.yaml` / `values-prod.yaml` |
+| DB | 클러스터 안 Postgres 17 (StatefulSet) | RDS PostgreSQL 17 |
+| DB 비밀번호 | `local/.env` → k8s Secret | Secrets Manager → External Secrets → k8s Secret |
+| 이미지 | 노트북에서 빌드 → VM 에 바로 넣기 (`make local-image-import`) | ECR |
+| NetworkPolicy | k3s 내장 컨트롤러로 적용 | VPC CNI 네트워크 정책으로 적용 |
+| CPU | 노트북에 따라 arm64(Apple Silicon) 또는 amd64 | amd64 (t3) → **이미지는 멀티 아키텍처로 빌드** |
+
+## 2. 폴더 구조
 
 ```text
 .
 ├── terraform/
-│   ├── bootstrap/            # 계정당 1회: state 버킷(S3) + 잠금 테이블(DynamoDB) + GitHub OIDC 역할
-│   ├── modules/platform/     # 환경 공통 스택 (VPC, SG, EC2, RDS, S3, IAM) - terraform-aws-modules 조합
-│   └── envs/
-│       ├── local/            # (선택) floci/LocalStack 대상. S3, Secrets Manager 만
-│       ├── dev/              # backend.hcl + terraform.tfvars (비용 우선)
-│       └── prod/             # backend.hcl + terraform.tfvars (가용성·보호 우선)
-├── ansible/
-│   ├── inventories/{local,dev,prod}/   # 환경별 인벤토리 (dev/prod 는 aws_ec2 동적 인벤토리)
-│   ├── playbooks/            # site.yml = hardening -> docker -> app
-│   ├── roles/app/            # 앱 배포 롤 (Docker Compose)
-│   └── requirements.yml      # geerlingguy, devsec.hardening, amazon.aws 등 (버전 고정)
-├── local/docker-compose.yml  # 로컬 개발 환경
-├── .github/
-│   ├── workflows/terraform.yml       # fmt / validate / tflint / plan / apply
-│   ├── workflows/security-scan.yml   # Trivy + Checkov (SARIF -> Security 탭)
-│   ├── workflows/ansible.yml         # ansible-lint + syntax-check
-│   ├── dependabot.yml                # 고정 버전 자동 업데이트 PR
-│   └── CODEOWNERS                    # 팀별 리뷰 담당
-├── docs/USAGE.md                     # 단계별 사용 가이드
-├── trivy.yaml / .checkov.yaml        # 스캐너 설정 (보안팀 관리)
-├── .pre-commit-config.yaml
-└── Makefile                          # make help
+│   ├── bootstrap/            # 계정당 1회: state 버킷 + 잠금 테이블 + GitHub OIDC 역할
+│   ├── modules/platform/     # 환경 공통 스택: VPC, EKS, RDS, S3, ECR, Pod Identity
+│   └── envs/{local,dev,prod} # local 은 floci(로컬 AWS 에뮬레이터)용 S3/Secrets Manager
+├── ansible/                  # 로컬 VM 전용: 하드닝 -> k3s 설치
+│   ├── inventories/local/    # VM 3대 (IP 는 Vagrantfile 과 같게)
+│   ├── playbooks/            # site.yml = hardening.yml -> k3s.yml
+│   └── roles/k3s/            # k3s 바이너리(체크섬 검증) + systemd 설치
+├── local/
+│   ├── vagrant/Vagrantfile   # VM 3대. macOS(Apple Silicon/Intel), Windows 공통
+│   └── docker-compose.yml    # (선택) 앱만 빠르게 돌릴 때, floci 로컬 AWS
+├── deploy/
+│   ├── charts/app/           # 앱 Helm 차트 + values-{local,dev,prod}.yaml
+│   ├── argocd/               # Argo CD 설치값, {dev,prod}-root.yaml, apps/{dev,prod}/
+│   └── platform/             # ClusterSecretStore, ClusterIssuer
+├── .github/workflows/        # terraform, k8s, ansible, security-scan
+├── docs/USAGE.md             # 단계별 사용 가이드
+└── Makefile                  # make help
 ```
 
-## 2. 팀별 역할
+## 3. 팀별 역할
 
 | 팀 | 주로 보는 곳 | 하는 일 |
 |---|---|---|
-| **인프라** | `terraform/`, `ansible/playbooks`, `.github/workflows` | 모듈·환경 관리, plan 리뷰, prod apply 승인 |
-| **보안** | `.checkov.yaml`, `trivy.yaml`, `ansible/inventories/*/group_vars/all/hardening.yml`, `terraform/bootstrap` (IAM) | 스캔 정책, 하드닝 기준선, 예외 승인, IAM 최소 권한 검토 |
-| **풀스택** | `local/`, `ansible/roles/app`, `inventories/*/group_vars/all/main.yml` 의 `app_*` 변수 | 앱 이미지·환경 변수, 로컬 개발 환경 |
+| **인프라** | `terraform/`, `deploy/argocd`, `deploy/platform`, `local/vagrant`, `.github/workflows` | 클러스터·네트워크, Argo CD, plan 리뷰, prod 승인 |
+| **보안** | `ansible/inventories/local/group_vars/all/hardening.yml`, `.checkov.yaml`, `trivy.yaml`, `terraform/bootstrap`, Pod Identity 권한 | 하드닝 기준선 실습, 스캔 정책, IAM 최소 권한 |
+| **풀스택** | `deploy/charts/app/`, `local/` | 앱 이미지·환경 변수, 로컬 배포 |
 
 리뷰 담당은 `.github/CODEOWNERS` 에 있습니다. `@your-org/...` 를 실제 팀 이름으로 바꾸세요.
 
-## 3. 사용한 오픈소스 (모두 버전 고정)
-
-GitHub 에서 많이 쓰이고 지금도 관리되는 것들로 골랐습니다. 2026-11-02 기준 최신 태그입니다.
+## 4. 사용한 오픈소스 (모두 버전 고정, 2026-11-06 기준)
 
 | 구분 | 이름 | 버전 |
 |---|---|---|
-| Terraform | Terraform CLI | 1.17.1 (`required_version >= 1.11.1`) |
-| | hashicorp/aws provider | `~> 6.71` |
-| | terraform-aws-modules/vpc | 6.7.3 |
-| | terraform-aws-modules/security-group | 6.0.0 |
-| | terraform-aws-modules/ec2-instance | 6.4.1 |
-| | terraform-aws-modules/rds | 7.2.2 |
-| | terraform-aws-modules/s3-bucket | 5.17.0 |
-| | terraform-aws-modules/iam (iam-role, iam-policy, iam-oidc-provider) | 6.8.2 |
-| | terraform-aws-modules/dynamodb-table | 5.5.2 |
-| Ansible | geerlingguy.docker / geerlingguy.pip | 8.0.0 / 3.1.2 |
-| | devsec.hardening (os_hardening, ssh_hardening) | 11.0.0 |
-| | amazon.aws (aws_ec2 인벤토리, aws_ssm 접속) | 12.0.0 |
-| | community.docker / community.general / ansible.posix | 5.4.0 / 13.5.0 / 2.2.2 |
-| 보안 스캔 | Trivy (tfsec 후속) / Checkov | trivy-action 0.36.0 / checkov-action 12.3136.0 |
+| Terraform | Terraform CLI / hashicorp/aws | 1.17.1 / `~> 6.71` |
+| | terraform-aws-modules: eks / eks-pod-identity / ecr | 21.29.0 / 2.10.0 / 3.2.1 |
+| | terraform-aws-modules: vpc / security-group / rds / s3-bucket / iam / dynamodb-table | 6.7.3 / 6.0.0 / 7.2.2 / 5.17.0 / 6.8.2 / 5.5.2 |
+| Kubernetes | k3s (로컬) / EKS | v1.36.6+k3s1 / 1.36 |
+| Helm 차트 (Argo CD 가 설치) | argo-cd / aws-load-balancer-controller / traefik / cert-manager / external-secrets | 10.14.0 / 3.6.2 / 42.3.0 / v1.21.3 / 2.14.0 |
+| 로컬 VM | Vagrant / 박스 | 2.4 이상 / `bento/ubuntu-24.04` (arm64·amd64) |
+| Ansible | ansible-core (VM 안) / devsec.hardening / community.general / ansible.posix | 2.21.6 / 11.0.0 / 13.5.0 / 2.2.2 |
+| 보안 스캔 | Trivy / Checkov | trivy-action 0.36.0 / checkov-action 12.3136.0 |
 | 로컬 AWS | floci (기본) / LocalStack (선택) | 2.4.0 / 4.14.0 |
 
-GitHub Actions 는 태그 대신 **커밋 SHA 로 고정**했습니다 (공급망 공격 방지). 버전 업데이트는 Dependabot 이 PR 로 올립니다.
+GitHub Actions 는 태그 대신 **커밋 SHA 로 고정**했습니다. 버전 업데이트는 Dependabot 이 PR 로 올립니다.
 
-> **LocalStack 주의**: LocalStack 의 GitHub 레포는 2026년 3월에 아카이브되었습니다. 이미지 사용 조건(인증 토큰 필요 여부)을 확인하기 전까지는 기본값으로 쓰지 않고, `localstack` 프로필로만 켜도록 했습니다. 기본 로컬 AWS 에뮬레이터는 같은 4566 포트를 쓰는 MIT 라이선스 **floci** 입니다.
+## 5. 빠른 시작
 
-## 4. 빠른 시작
+### 5.1 로컬 (Vagrant + k3s)
 
-### 4.1 준비물
-
-- Terraform 1.11.1 이상 (CI 는 1.17.1), AWS CLI v2, Docker (Compose v2)
-- Python 3.11 이상: `pip install -r ansible/requirements.txt`
-- dev/prod 에 Ansible 로 접속하려면 로컬에 [Session Manager plugin](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
-- (권장) `pip install pre-commit && pre-commit install`
-
-### 4.2 local (Docker Compose)
+필요한 것: Vagrant 2.4+, VirtualBox 7.1+ (또는 VMware Fusion/Workstation), kubectl, helm. RAM 은 VM 이 약 6GB 를 씁니다.
 
 ```bash
-cp local/.env.example local/.env        # 비밀번호 수정
-make local-up                           # postgres + app  -> http://localhost:8080
-
-# (선택) 로컬 AWS 가 필요할 때: floci + terraform/envs/local apply
-make local-aws-up
-aws --endpoint-url http://localhost:4566 s3 ls
-
-# (선택) LocalStack 을 쓰고 싶다면 (floci 와 동시에 켜지 말 것)
-make local-localstack-up
-
-# (선택) Ansible 플레이북을 로컬 컨테이너에 연습
-docker compose -f local/docker-compose.yml --env-file local/.env --profile ansible-lab up -d
-make ansible-deps
-make ansible-run ENV=local
-
-make local-down
+make k3s-up                                   # VM 3대 생성 + 하드닝 + k3s (처음 10~15분)
+export KUBECONFIG=$PWD/local/vagrant/.kube/config
+kubectl get nodes                             # local-cp-01, local-worker-01, local-worker-02 가 Ready
+make local-deploy                             # 앱 + Postgres 배포 -> http://192.168.56.10
 ```
 
-로컬에서는 VPC·EC2·RDS 를 흉내 내지 않습니다. postgres 컨테이너가 RDS(같은 PostgreSQL 17), app 컨테이너가 EC2 역할을 하고, 앱이 호출하는 AWS API(S3, Secrets Manager 등)만 floci 로 대신합니다.
+노트북 사양이 낮으면 `K3S_WORKERS=1 K3S_WORKER_MEMORY=1536 make k3s-up` 처럼 줄일 수 있습니다.
 
-### 4.3 AWS 계정 부트스트랩 (계정당 1회, 인프라팀)
+### 5.2 dev / prod (EKS)
 
 ```bash
-cd terraform/bootstrap
-# dev.tfvars 의 allowed_account_ids, github_repository 수정
-terraform init
-terraform apply -var-file=dev.tfvars
-terraform output
+make tf-init ENV=dev && make tf-plan ENV=dev && make tf-apply ENV=dev   # VPC, EKS, RDS, ECR (20~30분)
+make argocd-bootstrap ENV=dev                                           # Argo CD 설치 + app-of-apps 등록
 ```
 
-출력값을 다음 위치에 넣습니다.
-
-| 출력 | 넣을 곳 |
-|---|---|
-| `state_bucket`, `lock_table` | `terraform/envs/dev/backend.hcl` 의 `bucket`, `dynamodb_table` |
-| `plan_role_arn` | GitHub Environment **`dev-plan`** 의 변수 `AWS_PLAN_ROLE_ARN` |
-| `apply_role_arn` | GitHub Environment **`dev`** 의 변수 `AWS_APPLY_ROLE_ARN` |
-
-prod 계정도 `prod.tfvars` 로 같은 과정을 반복합니다. GitHub Environment **`prod`** 에는 반드시 *Required reviewers* 를 걸어 두세요.
-
-부트스트랩 state 는 처음엔 로컬 파일입니다. 안전하게 보관하거나, 만든 버킷으로 옮기려면 `versions.tf` 에 `backend "s3" {}` 를 추가하고 `terraform init -migrate-state -backend-config=...` 를 실행합니다.
-
-> **잠금 방식**: 원격 state 는 **S3 + DynamoDB 잠금**입니다. Terraform 1.10 부터 S3 자체 잠금(`use_lockfile`)이 생겨 `dynamodb_table` 사용 시 *deprecated* 경고가 나옵니다. 동작에는 문제 없고, 옮길 때는 `backend.hcl` 의 `use_lockfile = true` 주석을 풀어 두 방식을 함께 쓰다가 `dynamodb_table` 을 지우면 됩니다.
-
-### 4.4 dev / prod 배포
-
-```bash
-# terraform.tfvars 의 project, allowed_account_ids 등 수정
-make tf-init  ENV=dev
-make tf-plan  ENV=dev
-make tf-apply ENV=dev
-
-# Ansible: 출력된 버킷 이름을 inventories/dev/group_vars/all/main.yml 의 ansible_aws_ssm_bucket_name 에
-terraform -chdir=terraform/envs/dev output -raw artifact_bucket_name
-make ansible-deps
-make ansible-ping ENV=dev
-make ansible-run  ENV=dev
-```
+그 다음부터는 Git 에 병합하면 Argo CD 가 클러스터에 반영합니다. 자세한 순서는 [USAGE.md](docs/USAGE.md) 6~7단계를 보세요.
 
 | 항목 | dev | prod |
 |---|---|---|
 | VPC CIDR / AZ | 10.10.0.0/16, 2 AZ | 10.20.0.0/16, 3 AZ |
 | NAT 게이트웨이 | 1개 (비용 절감) | AZ 마다 1개 |
-| 앱 EC2 | t3.small × 1 | t3.medium × 2 |
+| EKS 노드 | t3.medium × 2 (최대 3) | t3.medium × 3 (최대 6) |
 | RDS | db.t4g.micro, 단일 AZ, 백업 3일 | db.t4g.medium, Multi-AZ, 백업 30일, 삭제 보호 |
-| Flow Log 보존 | 90일 | 365일 |
+| 앱 배포 | 병합하면 자동 | Argo CD 화면에서 Sync (수동) |
 
-## 5. 아키텍처와 보안 기본값
+> **비용 주의**: EKS 컨트롤 플레인은 클러스터당 시간 요금이 붙습니다. 실습이 끝나면 dev 를 `terraform destroy` 하세요.
 
-- **네트워크**: public / private / database 서브넷 3계층. EC2 는 private, RDS 는 database 서브넷. 기본 SG 는 모든 트래픽 차단. VPC Flow Log 기본 활성화.
-- **접속**: SSH 포트와 키 없이 **SSM Session Manager** 로만 접속합니다. Ansible 도 `amazon.aws.aws_ssm` 커넥션으로 붙고, 파일 전송에는 아티팩트 S3 버킷을 씁니다.
-- **EC2**: Ubuntu 24.04 (SSM 파라미터로 최신 AMI), IMDSv2 강제, 루트 볼륨 암호화, 상세 모니터링.
-- **RDS**: PostgreSQL 17, 마스터 비밀번호는 **Secrets Manager 가 생성·관리** (state 에 평문 없음), SSL 강제(`rds.force_ssl=1`), IAM DB 인증, Performance Insights, 로그 CloudWatch 전송.
-- **S3**: 퍼블릭 차단, KMS 암호화, 버전 관리, HTTPS·TLS1.2 강제 정책.
-- **IAM**: CI 는 장기 키 없이 **GitHub OIDC**. PR plan 은 읽기 전용 역할, apply 는 승인 규칙이 걸린 GitHub Environment 에서만 assume 가능. apply 역할 권한(`apply_role_policy_arns`)은 기본값이 넓으니 보안팀과 최소 권한으로 줄이세요.
-- **OS**: dev-sec `os_hardening` + `ssh_hardening` 적용. 기준 변수는 `group_vars/all/hardening.yml`.
-- **앱 컨테이너**: read-only 루트 FS, `no-new-privileges`, `cap_drop: ALL`.
+## 6. 아키텍처와 보안 기본값
 
-## 6. CI/CD (GitHub Actions)
+- **네트워크**: public / private / database 서브넷 3계층. EKS 노드는 private, RDS 는 database 서브넷. 기본 SG 는 모든 트래픽 차단, VPC Flow Log 활성화.
+- **EKS**: API 엔드포인트는 공개하되 `eks_public_access_cidrs` 의 IP 만 허용 (0.0.0.0/0 은 변수 검증으로 막음). 컨트롤 플레인 로그 5종 CloudWatch 전송, Secret KMS 암호화. 접근 권한은 EKS Access Entry.
+- **파드 권한**: 장기 키 없이 **EKS Pod Identity**. AWS LB Controller, EBS CSI, External Secrets(RDS 비밀번호 시크릿 하나만), 앱(아티팩트 버킷만)에 각각 최소 권한 역할.
+- **RDS**: PostgreSQL 17, 마스터 비밀번호는 Secrets Manager 가 생성·관리, SSL 강제, 노드 SG 에서만 5432 허용.
+- **앱 파드**: non-root, read-only 루트 FS, 모든 capability 제거, seccomp RuntimeDefault, NetworkPolicy 로 Ingress 컨트롤러에서 오는 트래픽만 허용.
+- **로컬 VM**: dev-sec `os_hardening` + `ssh_hardening`. k3s 가 필요한 IP 포워딩만 예외로 켭니다.
+- **CI**: GitHub OIDC (장기 키 없음). PR plan 은 읽기 전용 역할, apply 는 승인 규칙이 걸린 GitHub Environment 에서만.
+
+## 7. CI/CD (GitHub Actions)
 
 | 워크플로 | 언제 | 하는 일 |
 |---|---|---|
-| `terraform.yml` | `terraform/**` 변경 PR | `fmt -check` → `validate` + `tflint` (모든 루트) → dev/prod `plan` (결과는 Job Summary) |
-| | `main` 푸시 | dev `apply` (Environment `dev`) |
-| | 수동 실행 | 선택한 환경 `apply` (prod 는 승인 필요) |
-| `security-scan.yml` | 모든 PR, main, 매주 월요일 | Trivy(모듈 내부까지 설정 오류+시크릿, HIGH/CRITICAL 이면 실패), Checkov(우리 코드 + GitHub Actions + 시크릿). 결과는 Security 탭 |
-| `ansible.yml` | `ansible/**` 변경 PR | 롤·컬렉션 설치 → 환경별 syntax-check → ansible-lint(production 프로필) |
+| `terraform.yml` | `terraform/**` 변경 PR / main 푸시 / 수동 | fmt, validate, tflint, dev/prod plan / dev apply / 선택 환경 apply (prod 승인 필요) |
+| `k8s.yml` | `deploy/**` 변경 PR | Helm lint, local/dev/prod 렌더링 + kubeconform(CRD 포함) 스키마 검사 |
+| `ansible.yml` | `ansible/**`, `local/vagrant/**` 변경 PR | syntax-check, ansible-lint(production 프로필) |
+| `security-scan.yml` | 모든 PR, main, 매주 월요일 | Trivy(Terraform 모듈 내부 + Helm/K8s 매니페스트 + 시크릿, HIGH 이상 실패), Checkov |
 
-AWS 역할 변수가 아직 없으면 plan/apply 단계는 건너뛰고 안내만 남깁니다. 그래서 저장소를 올리자마자 fmt/validate/스캔은 바로 동작합니다.
+앱 배포 흐름: 앱 저장소 CI 가 이미지를 ECR 에 올림 → `values-<env>.yaml` 의 `image.tag` 를 바꾸는 PR → 병합 → Argo CD 가 배포.
 
-**스캔 예외 처리**: 꼭 필요한 경우만 `.checkov.yaml` 의 `skip-check` 또는 리소스 위 `#checkov:skip=CKV_AWS_xxx:사유` 로 남기고, 보안팀 리뷰를 받습니다.
+## 8. 처음 쓸 때 바꿀 것 체크리스트
 
-## 7. 처음 쓸 때 바꿀 것 체크리스트
-
-- [ ] `myproject` → 실제 프로젝트 이름 (`terraform.tfvars`, `bootstrap/*.tfvars`, `inventories/*/aws_ec2.yml`)
-- [ ] AWS 계정 ID `111111111111` / `222222222222`
-- [ ] `your-org/infra_template` (OIDC 신뢰 대상 저장소), CODEOWNERS 팀 이름
-- [ ] `backend.hcl` 의 버킷·테이블 이름 (bootstrap 출력)
-- [ ] `inventories/{dev,prod}/group_vars/all/main.yml` 의 `ansible_aws_ssm_bucket_name`, `app_image`
-- [ ] 첫 `terraform init` 후 생긴 `.terraform.lock.hcl` 커밋 (`terraform providers lock -platform=linux_amd64 -platform=darwin_arm64` 권장)
-- [ ] GitHub Environments `dev-plan`, `prod-plan`, `dev`, `prod` 생성과 변수 등록, `prod` 승인자 지정
-
-## 8. 확장 아이디어
-
-- ALB + ACM (`terraform-aws-modules/alb`), ECS/EKS 로 전환 (`terraform-aws-modules/ecs`, `eks`)
-- 여러 환경을 DRY 하게 관리해야 하면 Terragrunt 도입 검토
-- Ansible 롤 테스트: Molecule + `geerlingguy/docker-ubuntu2404-ansible` 이미지
-- 비용 가시화: Infracost 를 PR 코멘트로 추가
+- [ ] `myproject` → 실제 프로젝트 이름 (`terraform.tfvars`, `bootstrap/*.tfvars`, `deploy/argocd/apps/*/aws-load-balancer-controller.yaml`)
+- [ ] AWS 계정 ID `111111111111` / `222222222222`, `backend.hcl` 의 버킷·테이블 (bootstrap 출력)
+- [ ] `eks_public_access_cidrs` 에 kubectl 을 쓸 공인 IP, `eks_admin_principal_arns` 에 팀원 IAM 역할
+- [ ] `deploy/argocd` 의 `repoURL` (템플릿을 복사한 저장소), 비공개 저장소면 Argo CD 에 저장소 인증 등록
+- [ ] `deploy/argocd/apps/*/aws-load-balancer-controller.yaml` 의 `vpcId` (terraform output `vpc_id`)
+- [ ] `deploy/charts/app/values-{dev,prod}.yaml` 의 `image.repository`, `ingress.host`, `database.external.*` (terraform output)
+- [ ] `deploy/platform/cluster-issuer.yaml` 의 이메일
+- [ ] CODEOWNERS 팀 이름, GitHub Environments(`dev-plan`, `prod-plan`, `dev`, `prod`)와 prod 승인자
+- [ ] 첫 `terraform init` 후 `.terraform.lock.hcl` 커밋 (`terraform providers lock -platform=linux_amd64 -platform=darwin_arm64`)

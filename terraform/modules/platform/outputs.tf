@@ -1,5 +1,5 @@
 output "vpc_id" {
-  description = "VPC ID"
+  description = "VPC ID (deploy/argocd 의 aws-load-balancer-controller 값에 넣는다)"
   value       = module.vpc.vpc_id
 }
 
@@ -8,27 +8,37 @@ output "private_subnet_ids" {
   value       = module.vpc.private_subnets
 }
 
-output "app_instance_ids" {
-  description = "앱 EC2 인스턴스 ID (Ansible SSM 접속 대상)"
-  value       = { for k, m in module.app : k => m.id }
+output "cluster_name" {
+  description = "EKS 클러스터 이름"
+  value       = module.eks.cluster_name
 }
 
-output "app_security_group_id" {
-  description = "앱 보안 그룹 ID"
-  value       = module.app_sg.id
+output "cluster_endpoint" {
+  description = "EKS API 엔드포인트"
+  value       = module.eks.cluster_endpoint
+}
+
+output "ecr_repository_url" {
+  description = "앱 이미지 ECR 주소 (deploy/charts/app/values-<env>.yaml 의 image.repository)"
+  value       = module.ecr.repository_url
 }
 
 output "artifact_bucket_name" {
-  description = "아티팩트 버킷 이름 (Ansible 의 ansible_aws_ssm_bucket_name 에 사용)"
+  description = "아티팩트 버킷 이름"
   value       = module.artifact_bucket.s3_bucket_id
 }
 
 output "db_endpoint" {
-  description = "RDS 엔드포인트"
+  description = "RDS 엔드포인트 (host:port)"
   value       = module.db.db_instance_endpoint
 }
 
+output "db_address" {
+  description = "RDS 호스트 이름 (deploy/charts/app/values-<env>.yaml 의 externalDatabase.host)"
+  value       = module.db.db_instance_address
+}
+
 output "db_master_secret_arn" {
-  description = "RDS 마스터 비밀번호가 저장된 Secrets Manager ARN"
+  description = "RDS 마스터 비밀번호가 저장된 Secrets Manager ARN (External Secrets 가 읽는다)"
   value       = module.db.db_instance_master_user_secret_arn
 }

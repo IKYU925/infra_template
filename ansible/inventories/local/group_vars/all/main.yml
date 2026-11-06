@@ -1,12 +1,8 @@
 env_name: local
 
-# 컨테이너에는 커널 파라미터/마운트 하드닝을 적용할 수 없으므로 끈다
-apply_os_hardening: false
-apply_ssh_hardening: false
+# 하드닝은 로컬 VM 에서 실습한다 (EKS 노드는 AWS 관리형 이미지라 Ansible 대상이 아니다)
+apply_os_hardening: true
+apply_ssh_hardening: true
 
-# 컨테이너 안에서는 Docker 를 설치하지 않는다 (호스트 Docker 사용)
-install_docker: false
-
-app_name: sample-app
-app_image: nginxinc/nginx-unprivileged:1.29-alpine
-app_port: 8080
+# k3s 서버 주소. 워커가 이 주소로 클러스터에 합류한다.
+k3s_server_ip: 192.168.56.10

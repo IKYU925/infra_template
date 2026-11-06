@@ -7,4 +7,6 @@
 /trivy.yaml               @your-org/security-team
 /.github/workflows/       @your-org/infra-team @your-org/security-team
 /local/                   @your-org/fullstack-team @your-org/infra-team
-/ansible/roles/app/       @your-org/fullstack-team @your-org/infra-team
+/deploy/charts/app/       @your-org/fullstack-team @your-org/infra-team
+/deploy/argocd/           @your-org/infra-team
+/deploy/platform/         @your-org/infra-team @your-org/security-team

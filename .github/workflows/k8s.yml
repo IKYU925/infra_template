@@ -1,0 +1,49 @@
+name: k8s
+
+on:
+  pull_request:
+    paths:
+      - "deploy/**"
+      - ".github/workflows/k8s.yml"
+  push:
+    branches: [main]
+    paths:
+      - "deploy/**"
+
+permissions:
+  contents: read
+
+env:
+  HELM_VERSION: "v3.22.1"
+  KUBECONFORM_VERSION: "v0.8.0"
+  # EKS(terraform eks_version)와 로컬 k3s(ansible k3s_version)의 Kubernetes 버전
+  KUBERNETES_VERSION: "1.36.0"
+  CRD_SCHEMAS: "https://raw.githubusercontent.com/datreeio/CRDs-catalog/main/{{.Group}}/{{.ResourceKind}}_{{.ResourceAPIVersion}}.json"
+
+jobs:
+  validate:
+    name: helm lint + kubeconform
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: azure/setup-helm@1a275c3b69536ee54be43f2070a358922e12c8d4 # v4.3.1
+        with:
+          version: ${{ env.HELM_VERSION }}
+      - name: Install kubeconform
+        run: |
+          curl -sSfL "https://github.com/yannh/kubeconform/releases/download/${KUBECONFORM_VERSION}/kubeconform-linux-amd64.tar.gz" | sudo tar xz -C /usr/local/bin kubeconform
+      - name: Lint and validate the app chart (local, dev, prod)
+        run: |
+          for env in local dev prod; do
+            echo "== $env"
+            helm lint deploy/charts/app -f "deploy/charts/app/values-$env.yaml"
+            helm template app deploy/charts/app -n app --kube-version "$KUBERNETES_VERSION" \
+              -f "deploy/charts/app/values-$env.yaml" \
+              | kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
+                  -schema-location default -schema-location "$CRD_SCHEMAS"
+          done
+      - name: Validate Argo CD applications and platform manifests
+        run: |
+          kubeconform -strict -summary -kubernetes-version "$KUBERNETES_VERSION" \
+            -schema-location default -schema-location "$CRD_SCHEMAS" \
+            deploy/argocd/apps deploy/argocd/dev-root.yaml deploy/argocd/prod-root.yaml deploy/platform

@@ -1,0 +1,52 @@
+# Ingress 컨트롤러. 로컬 k3s 에 기본으로 들어 있는 것과 같은 Traefik 을 쓴다.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  # Application 을 지우면 만든 리소스(NLB 등)도 함께 지운다
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd.argoproj.io/sync-wave: "-2"
+spec:
+  project: default
+  source:
+    repoURL: https://traefik.github.io/charts
+    chart: traefik
+    targetRevision: 42.3.0
+    helm:
+      valuesObject:
+        deployment:
+          replicas: 2
+        ingressClass:
+          enabled: true
+          isDefaultClass: true
+          name: traefik
+        ports:
+          web:
+            # HTTP 는 HTTPS 로 돌리되, cert-manager 의 HTTP-01 인증 요청은 통과시킨다
+            allowACMEByPass: true
+            http:
+              redirections:
+                entryPoint:
+                  to: websecure
+                  scheme: https
+                  permanent: true
+        service:
+          annotations:
+            service.beta.kubernetes.io/aws-load-balancer-scheme: internet-facing
+            service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: ip
+          spec:
+            type: LoadBalancer
+            # AWS Load Balancer Controller 가 NLB 를 만든다 (EKS 기본 CLB 를 쓰지 않음)
+            loadBalancerClass: service.k8s.aws/nlb
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

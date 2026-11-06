@@ -10,8 +10,13 @@ single_nat_gateway = false
 
 flow_log_retention_days = 365
 
-app_instance_count = 2
-app_instance_type  = "t3.medium"
+# EKS: 노드 t3.medium x 3 (AZ 3개에 분산)
+eks_public_access_cidrs  = ["203.0.113.10/32"] # TODO: kubectl 을 쓸 곳의 공인 IP
+eks_admin_principal_arns = []                  # TODO: 운영 관리자 IAM 역할 ARN
+node_instance_types      = ["t3.medium"]
+node_min_size            = 3
+node_max_size            = 6
+node_desired_size        = 3
 
 db_instance_class        = "db.t4g.medium"
 db_allocated_storage     = 50

@@ -60,28 +60,57 @@ variable "flow_log_retention_days" {
   default     = 90
 }
 
-variable "app_ingress_cidrs" {
-  description = "앱 HTTP/HTTPS 허용 CIDR (비우면 VPC 내부만)"
+variable "eks_version" {
+  description = "Kubernetes 마이너 버전 (로컬 k3s 와 같은 마이너)"
+  type        = string
+  default     = "1.36"
+}
+
+variable "eks_public_access_cidrs" {
+  description = "EKS API 접속 허용 공인 IP 대역"
+  type        = list(string)
+}
+
+variable "eks_admin_principal_arns" {
+  description = "클러스터 관리자 IAM ARN (사람용)"
   type        = list(string)
   default     = []
 }
 
-variable "app_instance_count" {
-  description = "앱 EC2 수"
-  type        = number
-  default     = 1
+variable "node_instance_types" {
+  description = "노드그룹 인스턴스 타입"
+  type        = list(string)
+  default     = ["t3.medium"]
 }
 
-variable "app_instance_type" {
-  description = "앱 EC2 타입"
-  type        = string
-  default     = "t3.small"
+variable "node_min_size" {
+  description = "노드 최소 수"
+  type        = number
+  default     = 2
 }
 
-variable "app_root_volume_size" {
-  description = "앱 EC2 루트 볼륨(GiB)"
+variable "node_max_size" {
+  description = "노드 최대 수"
   type        = number
-  default     = 30
+  default     = 3
+}
+
+variable "node_desired_size" {
+  description = "노드 기본 수"
+  type        = number
+  default     = 2
+}
+
+variable "ecr_push_principal_arns" {
+  description = "ECR 에 이미지를 올릴 IAM 역할 ARN"
+  type        = list(string)
+  default     = []
+}
+
+variable "ecr_force_delete" {
+  description = "이미지가 있어도 ECR 저장소 삭제 허용"
+  type        = bool
+  default     = false
 }
 
 variable "db_engine_version" {
