@@ -17,7 +17,7 @@ ingress:
 database:
   source: external
   external:
-    remoteSecret: CHANGE_ME # terraform output -raw db_master_secret_arn
+    remoteKey: CHANGE_ME # terraform output -raw db_master_secret_arn
     host: CHANGE_ME # terraform output -raw db_address
 
 networkPolicy:

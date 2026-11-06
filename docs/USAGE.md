@@ -215,7 +215,7 @@ terraform -chdir=terraform/envs/dev providers lock -platform=linux_amd64 -platfo
 | `cluster_name` | 같은 파일의 `clusterName` (기본 `myproject-dev`) |
 | `ecr_repository_url` | `deploy/charts/app/values-dev.yaml` 의 `image.repository` |
 | `db_address` | `values-dev.yaml` 의 `database.external.host` |
-| `db_master_secret_arn` | `values-dev.yaml` 의 `database.external.remoteSecret` |
+| `db_master_secret_arn` | `values-dev.yaml` 의 `database.external.remoteKey` |
 
 `values-dev.yaml` 의 `ingress.host` 에 실제 도메인을 넣고, `deploy/platform/cluster-issuer.yaml` 의 이메일을 바꿉니다. 이 변경을 PR 로 올려 `main` 에 병합합니다 (Argo CD 는 `main` 을 봅니다).
 
