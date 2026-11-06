@@ -70,7 +70,7 @@ Terraform 이 AWS 리소스를, Ansible 이 로컬 VM(하드닝 + k3s 설치)을
 | 구분 | 이름 | 버전 |
 |---|---|---|
 | Terraform | Terraform CLI / hashicorp/aws | 1.17.1 / `~> 6.71` |
-| | terraform-aws-modules: eks / eks-pod-identity / ecr | 21.29.0 / 2.10.0 / 3.2.1 |
+| | terraform-aws-modules: eks / eks-pod-identity / ecr | 21.29.0 / 2.10.0 / 3.2.0 |
 | | terraform-aws-modules: vpc / security-group / rds / s3-bucket / iam / dynamodb-table | 6.7.3 / 6.0.0 / 7.2.2 / 5.17.0 / 6.8.2 / 5.5.2 |
 | Kubernetes | k3s (로컬) / EKS | v1.36.6+k3s1 / 1.36 |
 | Helm 차트 (Argo CD 가 설치) | argo-cd / aws-load-balancer-controller / traefik / cert-manager / external-secrets | 10.14.0 / 3.6.2 / 42.3.0 / v1.21.3 / 2.14.0 |

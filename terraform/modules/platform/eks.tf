@@ -195,7 +195,7 @@ module "app_s3_policy" {
 ################################################################################
 module "ecr" {
   source  = "terraform-aws-modules/ecr/aws"
-  version = "3.2.1"
+  version = "3.2.0"
 
   repository_name                 = "${var.project}/app"
   repository_image_tag_mutability = "IMMUTABLE"
