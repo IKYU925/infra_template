@@ -63,6 +63,9 @@ jobs:
         run: terraform validate -no-color
       - name: tflint
         working-directory: terraform/${{ matrix.dir }}
+        # 플러그인 다운로드를 인증 요청으로 보내 GitHub API 비인증 한도(러너 IP 공유)에 걸리지 않게 한다
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           tflint --init --config "$GITHUB_WORKSPACE/terraform/.tflint.hcl"
           tflint --config "$GITHUB_WORKSPACE/terraform/.tflint.hcl" --recursive --format compact
