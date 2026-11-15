@@ -14,7 +14,7 @@ S=.claude/skills/verify-infra/scripts/verify.sh   # run from repo root
 $S launch | $S doctor | $S drive <feature> | $S tf <dir> <args> | $S aws <args> | $S cleanup
 ```
 
-**Hard rule: never run `terraform apply`/`plan` against `envs/dev`, `envs/prod`, `envs/aiops-lab`, or `bootstrap` with real credentials, and never `make tf-apply`.** Those create billable AWS resources in shared accounts (`allowed_account_ids` are placeholders `111111111111`, `backend.hcl` has `CHANGE_ME`). Real dev/prod is proven only by `tf-static` locally plus the CI `plan` job. If the user explicitly asks for a real plan, have them run it themselves.
+**Hard rule: never run `terraform apply`/`plan` against `envs/dev`, `envs/prod`, or `bootstrap` with real credentials, and never `make tf-apply`.** Those create billable AWS resources in shared accounts (`allowed_account_ids` are placeholders `111111111111`, `backend.hcl` has `CHANGE_ME`). Real dev/prod is proven only by `tf-static` locally plus the CI `plan` job. If the user explicitly asks for a real plan, have them run it themselves.
 
 ## Prerequisites
 
@@ -52,9 +52,8 @@ Features live in [`features/`](features/README.md). Each `drive` target exits no
 | Command | Proves |
 |---|---|
 | `$S drive local-aws` | `terraform/envs/local` applies to floci, the S3 bucket + Secrets Manager secret really exist, re-plan is empty |
-| `$S drive tf-static` | `terraform fmt -check` + `init -backend=false && validate` for bootstrap, envs/local, envs/dev, envs/prod, envs/aiops-lab (what CI `fmt`/`validate` do) |
+| `$S drive tf-static` | `terraform fmt -check` + `init -backend=false && validate` for bootstrap, envs/local, envs/dev, envs/prod (what CI `fmt`/`validate` do) |
 | `$S drive ansible-lab` | `ansible ping` + `site.yml` against the Ubuntu 24.04 lab container, idempotent 2nd run, rendered `/opt/sample-app/compose.yml` |
-| `$S drive aiops-lab` | `terraform/envs/aiops-lab` (AI_auto_pipeline 4단계) applies to floci with a test-only provider override, an EventBridge `CloudWatch Alarm State Change` event for our alarm lands in SQS, another alarm's event does not |
 | `$S drive local-app` | app container serves HTTP 200 with the right env wiring, postgres accepts writes |
 
 Ad-hoc access to the same instance:

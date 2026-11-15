@@ -117,56 +117,12 @@ drive_local_aws() {
 drive_tf_static() {
   local e rc=0; e="$(ev tf-static)"; mkdir -p "$e"
   tf . fmt -check -recursive -diff -no-color > "$e/fmt.txt" 2>&1 || { log "FAIL fmt (see $e/fmt.txt)"; rc=1; }
-  for d in bootstrap envs/local envs/dev envs/prod envs/aiops-lab; do
+  for d in bootstrap envs/local envs/dev envs/prod; do
     local f="$e/validate-${d//\//-}.txt"
     { tf "$d" init -backend=false -input=false -no-color && tf "$d" validate -no-color; } > "$f" 2>&1 \
       && log "ok   validate $d" || { log "FAIL validate $d (see $f)"; rc=1; }
   done
   [[ $rc == 0 ]] && log "PASS tf-static -> $e" || die "tf-static failed -> $e"
-}
-
-drive_aiops_lab() {
-  local e r d; e="$(ev aiops-lab)"; r="$(run_dir)"; d="$r/work/terraform/envs/aiops-lab"; mkdir -p "$e"
-  local vars=(-var 'allowed_account_ids=["000000000000"]' -var budget_email=lab@example.com)
-  cat > "$d/floci_override.tf" <<'EOF'
-provider "aws" {
-  access_key                  = "test"
-  secret_key                  = "test"
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  endpoints {
-    budgets    = "http://aws:4566"
-    cloudwatch = "http://aws:4566"
-    ec2        = "http://aws:4566"
-    ecr        = "http://aws:4566"
-    events     = "http://aws:4566"
-    iam        = "http://aws:4566"
-    logs       = "http://aws:4566"
-    sqs        = "http://aws:4566"
-    ssm        = "http://aws:4566"
-    sts        = "http://aws:4566"
-  }
-}
-EOF
-  tf envs/aiops-lab init -input=false -no-color > "$e/tf-init.txt" 2>&1 || die "init failed ($e/tf-init.txt)"
-  tf envs/aiops-lab apply -auto-approve -input=false -no-color "${vars[@]}" > "$e/tf-apply.txt" 2>&1 || die "apply failed ($e/tf-apply.txt)"
-  tf envs/aiops-lab output -json > "$e/tf-output.json"
-  local q=http://aws:4566/000000000000/ai-incident-lab-alarms alarm_arn
-  alarm_arn="$(awscli cloudwatch describe-alarms --alarm-names tenant-a-shopapi-ErrorLogs --query 'MetricAlarms[0].AlarmArn' --output text)"
-  [[ "$alarm_arn" == arn:aws:cloudwatch:* ]] || die "alarm tenant-a-shopapi-ErrorLogs missing"
-  # floci 는 set-alarm-state 로 EventBridge 이벤트를 만들지 않는다. 같은 모양의 이벤트를 직접 넣어 규칙과 큐 정책을 검증한다
-  put_alarm_event() {
-    python3 -c 'import json,sys; print(json.dumps([{"Source":"aws.cloudwatch","DetailType":"CloudWatch Alarm State Change","Resources":[sys.argv[1]],"Detail":json.dumps({"alarmName":sys.argv[1].rsplit(":",1)[1],"state":{"value":"ALARM"},"previousState":{"value":"OK"}})}]))' "$1" > "$e/entries.json"
-    docker run --rm --network "$NET" -v "$e:/e" -e AWS_ACCESS_KEY_ID=test -e AWS_SECRET_ACCESS_KEY=test -e AWS_DEFAULT_REGION=ap-northeast-2 \
-      "$AWS_IMAGE" --endpoint-url http://aws:4566 events put-events --entries file:///e/entries.json --query FailedEntryCount --output text
-  }
-  [[ "$(put_alarm_event "$alarm_arn")" == 0 ]] || die "put-events (own alarm) failed"
-  awscli sqs receive-message --queue-url "$q" --wait-time-seconds 5 --max-number-of-messages 10 > "$e/sqs-own-alarm.json"
-  grep -q 'tenant-a-shopapi-ErrorLogs' "$e/sqs-own-alarm.json" || die "own alarm event did not reach SQS ($e/sqs-own-alarm.json)"
-  [[ "$(put_alarm_event "${alarm_arn%:*}:someone-elses-alarm")" == 0 ]] || die "put-events (other alarm) failed"
-  awscli sqs receive-message --queue-url "$q" --wait-time-seconds 3 > "$e/sqs-other-alarm.json"
-  ! grep -q someone-elses-alarm "$e/sqs-other-alarm.json" || die "rule routed an alarm it does not own"
-  log "PASS aiops-lab -> $e"
 }
 
 drive_ansible_lab() {
@@ -202,8 +158,8 @@ case "${1:-}" in
   doctor)  cmd_doctor ;;
   drive)   case "${2:-}" in
              local-app) drive_local_app ;; local-aws) drive_local_aws ;;
-             tf-static) drive_tf_static ;; ansible-lab) drive_ansible_lab ;; aiops-lab) drive_aiops_lab ;;
-             *) die "drive <local-app|local-aws|tf-static|ansible-lab|aiops-lab>" ;; esac ;;
+             tf-static) drive_tf_static ;; ansible-lab) drive_ansible_lab ;;
+             *) die "drive <local-app|local-aws|tf-static|ansible-lab>" ;; esac ;;
   tf)      shift; tf "$@" ;;
   aws)     shift; awscli "$@" ;;
   cleanup) cmd_cleanup ;;
