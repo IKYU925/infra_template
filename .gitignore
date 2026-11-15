@@ -34,3 +34,6 @@ results.json
 .DS_Store
 .idea/
 .vscode/
+
+# verify-infra skill evidence
+.verify-runs/
