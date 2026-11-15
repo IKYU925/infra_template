@@ -7,7 +7,6 @@ User-facing features of infra_template, from the point of view of an engineer ru
 | Local AWS via Terraform (floci) | [local-aws.md](local-aws.md) | `drive local-aws` | `make local-aws-up` |
 | Terraform static checks, all roots | [tf-static.md](tf-static.md) | `drive tf-static` | `make tf-validate`, CI `terraform` fmt/validate |
 | Ansible site.yml on the lab container | [ansible-lab.md](ansible-lab.md) | `drive ansible-lab` | `make ansible-run ENV=local` (dev/prod use SSM, not drivable) |
-| aiops-lab (4단계) on floci | [aiops-lab.md](aiops-lab.md) | `drive aiops-lab` | `make tf-apply ENV=aiops-lab` (real AWS, never from this skill) |
 | Local app + postgres stack | [local-app.md](local-app.md) | `drive local-app` | `make local-up` |
 
 Not mapped (cannot be driven locally without real AWS or GitHub, so do not claim them proven):
