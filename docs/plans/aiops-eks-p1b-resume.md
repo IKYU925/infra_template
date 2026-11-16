@@ -17,6 +17,15 @@
 3. 실제 계정 자격 증명을 설정한다(`aws sts get-caller-identity` 가 성공해야 한다). 이 맥북에서는 자격 증명이 만료돼 있었다.
 4. Claude Code 에서 이 파일(`docs/plans/aiops-eks-p1b-resume.md`)을 넘기며 "이어서 해" 라고 하면 된다.
 
+## 진행 (2026-11-17)
+
+- 새 맥에 `aws` 2.40.3, `terraform` 1.17.2(`hashicorp/tap`) 를 설치했다.
+- 계정과 자격 증명 준비(docs/aiops-eks.md "계정과 자격 증명을 준비한다")를 마쳤다. CLI 는 `AdministratorAccess` 가 붙은 IAM 사용자로 동작하고, 루트와 IAM 사용자 모두 MFA 가 켜져 있다.
+- 남은 것: 루트 액세스 키가 아직 있다(`AccountAccessKeysPresent=1`). 콘솔에서 삭제해야 한다.
+- `terraform/bootstrap/dev.tfvars` 의 `github_repository` 를 실제 저장소로 바꿨다. 계정 ID 는 아직 `111111111111` 이다.
+- 노드 타입은 t4g.large 로 둔다. 첫 실계정 실행에서 메모리 사용량을 측정한 뒤 t4g.medium 을 다시 본다.
+- 예산 알림은 base 층의 `aws_budgets_budget` 이 만든다. `budget_email` 은 공개 저장소에 커밋하지 않고 `TF_VAR_budget_email` 로 넘긴다.
+
 ## 다음 할 일 (순서대로)
 
 1. 운영자 준비 (docs/aiops-eks.md "처음 한 번 준비한다")
