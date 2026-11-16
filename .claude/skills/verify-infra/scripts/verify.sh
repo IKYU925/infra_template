@@ -90,10 +90,15 @@ drive_local_app() {
   local e; e="$(ev local-app)"; mkdir -p "$e"
   curl -si "http://127.0.0.1:$APP_PORT/" > "$e/app-response.txt"
   head -1 "$e/app-response.txt" | grep -q ' 200' || die "app did not return 200 (see $e/app-response.txt)"
-  docker exec ${PROJECT}-app-1 env | grep -E '^(DATABASE_URL|AWS_ENDPOINT_URL|AWS_REGION)=' | sed 's#://\([^:]*\):[^@]*@#://\1:***@#' > "$e/app-env.txt"
-  # app -> postgres over the compose network (what a real app would do)
+  docker exec ${PROJECT}-app-1 env | grep -E '^(DATABASE_URL|AWS_ENDPOINT_URL|AWS_REGION)=' | sed 's#://\([^:]*\):[^@]*@#://\1:***@#' | sort > "$e/app-env.txt"
+  [[ "$(cat "$e/app-env.txt")" == "$(printf '%s\n' 'AWS_ENDPOINT_URL=http://aws:4566' 'AWS_REGION=ap-northeast-2' 'DATABASE_URL=postgresql://app:***@postgres:5432/app')" ]] \
+    || die "app env wiring unexpected (see $e/app-env.txt)"
+  docker inspect ${PROJECT}-app-1 --format '{{.HostConfig.ReadonlyRootfs}} {{.HostConfig.SecurityOpt}} {{.HostConfig.Tmpfs}}' > "$e/app-hardening.txt"
+  grep -qx 'true \[no-new-privileges:true\] map\[/tmp:\]' "$e/app-hardening.txt" || die "app hardening unexpected (see $e/app-hardening.txt)"
+  # psql runs inside the postgres container; the placeholder app has no DB client
   docker exec ${PROJECT}-postgres-1 psql -U app -d app -c "create table if not exists verify_probe(id int); insert into verify_probe values (1);" > "$e/db-write.txt"
   docker exec ${PROJECT}-postgres-1 psql -U app -d app -tAc "select current_setting('server_version_num'), (select count(*) from verify_probe)" > "$e/db-read.txt"
+  grep -qE '^17[0-9]{4}\|[1-9][0-9]*$' "$e/db-read.txt" || die "postgres 17 read-back failed (see $e/db-read.txt)"
   docker compose -p "$PROJECT" ps --format '{{.Service}} {{.Image}} {{.Status}}' > "$e/compose-ps.txt"
   log "PASS local-app -> $e"
 }
@@ -111,7 +116,8 @@ drive_local_aws() {
   awscli s3api get-public-access-block --bucket "$bucket" > "$e/s3-public-access-block.json"
   awscli secretsmanager get-secret-value --secret-id myproject/local/db --query SecretString --output text > "$e/secret.json"
   grep -q '"Enabled"' "$e/s3-versioning.json" || die "versioning not Enabled"
-  grep -q '"host":"postgres"' "$e/secret.json" || die "secret content unexpected"
+  [[ "$(cat "$e/secret.json")" == '{"dbname":"app","host":"postgres","port":5432,"username":"app"}' ]] || die "secret content unexpected (see $e/secret.json)"
+  [[ "$(grep -c '": true' "$e/s3-public-access-block.json")" == 4 ]] || die "public access block not all true (see $e/s3-public-access-block.json)"
   # idempotency: second plan must be empty
   tf envs/local plan -detailed-exitcode -input=false -no-color -var aws_endpoint=http://aws:4566 > "$e/tf-replan.txt" 2>&1 \
     || die "re-plan not clean (exit $?) - see $e/tf-replan.txt"
@@ -133,7 +139,7 @@ drive_aiops_eks() {
   local e r d k3s; e="$(ev aiops-eks)"; r="$(run_dir)"; d="$r/work/terraform/envs/aiops-eks"; mkdir -p "$e"
   k3s=floci-aws-eks-ai-incident
   local bvars=(-var 'allowed_account_ids=["000000000000"]' -var budget_email=lab@example.com)
-  local cvars=(-var 'allowed_account_ids=["000000000000"]' -var state_bucket=unused -var caller_cidr=203.0.113.10/32)
+  local cvars=(-var 'allowed_account_ids=["000000000000"]' -var 'admin_principal_arns=[]' -var state_bucket=unused -var caller_cidr=203.0.113.10/32)
   local endpoints="" s
   for s in budgets ec2 ecr eks iam kms logs s3 s3control secretsmanager ssm sts; do endpoints+="    $s = \"http://aws:4566\""$'\n'; done
   for layer in base cluster; do

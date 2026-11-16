@@ -13,7 +13,7 @@ User-facing features of infra_template, from the point of view of an engineer ru
 Not mapped (cannot be driven locally without real AWS or GitHub, so do not claim them proven):
 
 - `make tf-plan/tf-apply ENV=dev|prod`, `terraform/bootstrap` apply, the CI `plan`/`apply` jobs (need OIDC roles and real accounts).
-- `make eks-up`/`eks-down`, `eks.sh down` ordering, the `eks` schedule workflow (need a real account and kubectl against real EKS).
+- `make eks-up`/`eks-down`, `eks.sh down` ordering, the `eks` schedule workflow (need a real account and kubectl against real EKS). The operator ran them once on the lab account; [aiops-eks.md](aiops-eks.md) lists what that run proved and what it caught.
 - `make ansible-ping/run ENV=dev|prod` (aws_ec2 dynamic inventory + SSM connection).
 - `make scan` (Trivy + Checkov). Drivable with Docker, but it is a static scan, not app behaviour; run it directly when a change touches security config.
 - LocalStack profile (`make local-localstack-up`): same port as floci, image may need an auth token.

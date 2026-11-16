@@ -19,32 +19,30 @@
 
 ## 진행 (2026-11-17)
 
-- 새 맥에 `aws` 2.40.3, `terraform` 1.17.2(`hashicorp/tap`) 를 설치했다.
-- 계정과 자격 증명 준비(docs/aws-account.md)를 마쳤다. CLI 는 `AdministratorAccess` 가 붙은 IAM 사용자로 동작하고, 루트와 IAM 사용자 모두 MFA 가 켜져 있다.
-- 남은 것: 루트 액세스 키가 아직 있다(`AccountAccessKeysPresent=1`). 콘솔에서 삭제해야 한다.
-- `terraform/bootstrap` 을 실제 계정에 적용했다(17개 생성). state 는 이 맥의 `terraform/bootstrap/terraform.tfstate` 로컬 파일에만 있다.
-- `base`, `cluster` 의 `backend.hcl`, `terraform.tfvars` 를 bootstrap 출력값으로 채웠다. 두 층 모두 backend init 이 된다.
-- `gha-apply` 역할 이름 끝에 무작위 접미사가 붙는다(`myproject-dev-gha-apply-...`). ARN 은 `terraform -chdir=terraform/bootstrap output -raw apply_role_arn` 으로 읽는다.
-- 노드 타입은 t4g.large 로 둔다. 첫 실계정 실행에서 메모리 사용량을 측정한 뒤 t4g.medium 을 다시 본다.
-- 예산 알림은 base 층의 `aws_budgets_budget` 이 만든다. `budget_email` 은 공개 저장소에 커밋하지 않고 `TF_VAR_budget_email` 로 넘긴다.
+완료 기준 2번(실제 계정 up → 노드 Ready → down → 남은 리소스 0)을 마쳤다.
+
+- 새 맥에 `aws` 2.40.3, `terraform` 1.17.2(`hashicorp/tap`) 를 설치했다. 계정과 자격 증명은 `docs/aws-account.md` 대로 만들었다(IAM 사용자, MFA, 루트 키 없음).
+- 계정을 무료 플랜에서 유료 플랜으로 올렸다. 무료 플랜은 t4g.large 를 띄우지 못한다.
+- `terraform/bootstrap` 적용(17개). state 는 이 맥의 `terraform/bootstrap/terraform.tfstate` 로컬 파일에만 있다. `gha-apply` 역할 ARN 은 `terraform -chdir=terraform/bootstrap output -raw apply_role_arn` 으로 읽는다(이름에 무작위 접미사).
+- GitHub OIDC immutable subject 때문에 bootstrap 변수를 `github_oidc_sub_prefix` 로 바꿨다(#27).
+- base 층 적용(12개), `make eks-secrets` 로 비밀 5개, GitHub Environment `dev` 에 `AWS_APPLY_ROLE_ARN`.
+- `make eks-up`: 컨트롤 플레인 9분 4초. 노드그룹은 무료 플랜에 막혀 32분 51초(정상이면 몇 분으로 추정). EBS CSI 애드온 설정의 `k8sTagClusterId` 를 EKS 가 거부해 지웠고, 다시 돌린 `up` 은 124초. 노드 2대 Ready, PVC 4개 Bound, Pod Identity 로 비밀 읽기 확인. aiops 와 shopapi 는 ECR 에 이미지가 없어 `ImagePullBackOff`.
+- `make eks-down`: 960초, `Destroy complete! Resources: 65 destroyed`. `leftovers` 가 태그 API 에 남은 삭제된 리소스 7개를 세어 실패했고, 종류별 API 로 확인하게 고친 뒤 `leftovers: 0`. 수정 브랜치로 돌린 `sweep` 워크플로도 `nothing left` 로 끝났다.
+- 노드 타입은 t4g.large 로 결정했다. metrics-server 가 없어 실제 메모리 사용량은 아직 못 쟀다.
+- 예산 알림은 base 층이 만든다. `budget_email` 은 커밋하지 않고 `TF_VAR_budget_email` 로 넘긴다.
 
 ## 다음 할 일 (순서대로)
 
-1. 운영자 준비 (docs/aiops-eks.md "처음 한 번 준비한다")
-   - `terraform/bootstrap` 실제 계정에 적용 (state 버킷, 잠금 테이블, GitHub OIDC `gha-apply` 역할)
-   - `terraform/envs/aiops-eks/{base,cluster}/backend.hcl`, `terraform.tfvars` 의 `CHANGE_ME`, `111111111111` 채우기. cluster 의 `admin_principal_arns` 에 운영자 주체와 `gha-apply` 역할
-   - Billing 에서 비용 할당 태그 `Project` 활성화
-   - GitHub Environment `dev` 에 변수 `AWS_APPLY_ROLE_ARN`
-2. `make eks-base-up`, `make eks-secrets AIOPS_ENV=<AI_auto_pipeline>/.env`
-3. `make eks-up` → 노드 Ready 확인, `up took` 시간 기록 → `make eks-down` → `leftovers: 0` 확인 (완료 기준 2)
-4. 결과 output 값을 AI_auto_pipeline 세션에 전달 (cluster_name, region, account_id, ecr_repository_url, loki_bucket_name, aiops_secret_name, kubeconfig_command)
-5. 올리기 cron 시각 조정: 측정한 "up + ArgoCD 전체 Healthy" 시간만큼 09:30 에서 당긴다. `eks.yml` cron 과 `eks.sh` 의 `UP_AT` 을 함께 바꾼다
-6. 저장소 변수 `EKS_SCHEDULE_ENABLED=true` 로 스케줄을 켜고 하루 동작 확인 (완료 기준 3)
-7. `docs/aiops-eks-cost.md` 실측 칸 채우기, 요금 계산기 공유 링크 추가
+1. Billing 에서 비용 할당 태그 `Project` 활성화 (태그가 붙은 리소스가 생긴 뒤 목록에 나온다)
+2. 결과 output 값을 AI_auto_pipeline 세션에 전달 (cluster_name, region, account_id, ecr_repository_url, loki_bucket_name, aiops_secret_name, kubeconfig_command). 이미지를 ECR 에 올려야 aiops 앱이 뜬다
+3. 정상 조건에서 `make eks-up` 과 "ArgoCD 전체 Healthy" 까지 시간을 다시 잰다. 이번 값은 무료 플랜 대기와 애드온 오류가 섞였다
+4. 올리기 cron 시각 조정: 잰 시간만큼 09:30 에서 당긴다. `eks.yml` cron 과 `eks.sh` 의 `UP_AT` 을 함께 바꾼다
+5. 저장소 변수 `EKS_SCHEDULE_ENABLED=true` 로 스케줄을 켜고 하루 동작 확인 (완료 기준 3)
+6. `docs/aiops-eks-cost.md` 실측 칸 채우기, 요금 계산기 공유 링크 추가
+7. bootstrap state 를 로컬 파일에서 S3 로 옮길지 정한다
 
 ## 결정 대기
 
-- 노드 타입: 기본 t4g.large (예산 안. 코어타임 하루 1.37달러 추정). t4g.medium + prefix delegation 이면 하루 0.29달러 절약, 메모리 여유 40%.
 - 스케줄을 실제 계정에서 켜는 시점: 운영자 승인 뒤.
 
 ## 하다 만 일

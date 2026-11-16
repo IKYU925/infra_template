@@ -20,6 +20,7 @@
 5. 그 사용자의 Security credentials 탭에서 MFA 를 등록한다.
 6. 같은 탭에서 Create access key → Command Line Interface (CLI) 로 키를 만든다. Secret access key 는 이 화면에서만 보인다.
 7. 루트에서 로그아웃하고, 이후 콘솔은 4 의 URL 로 IAM 사용자로 들어간다.
+8. 계정이 무료 플랜(Free plan)이면 Billing and Cost Management 에서 유료 플랜으로 올린다. 무료 플랜은 프리 티어 인스턴스 타입만 띄워서 EKS 노드(t4g.large)가 뜨지 않는다.
 
 맥에서 키를 넣는다.
 
@@ -78,6 +79,7 @@ Secret access key 는 다시 볼 수 없다. 키 파일을 옮기는 대신 새 
 | `AccessDenied` 가 Billing, 예산에서만 난다 | 위 3 번(IAM Billing 접근)이 꺼져 있다 | 루트로 켠다 |
 | ARN 이 `:root` 로 나온다 | 루트 키가 들어가 있다 | 루트 키를 지우고 IAM 사용자 키를 넣는다 |
 | Terraform 이 `allowed_account_ids` 오류를 낸다 | 다른 계정 키를 쓰고 있다 | `aws sts get-caller-identity` 로 계정을 확인한다 |
+| EKS 노드그룹이 오류 없이 `CREATING` 에서 멈추고 EC2 가 0 대다 | 무료 플랜이라 인스턴스 시작이 막혔다. 노드그룹 상태에는 드러나지 않는다 | CloudTrail 에서 `RunInstances` 의 `not eligible for Free Tier` 를 확인하고 유료 플랜으로 올린다. 오토스케일링이 재시도 간격을 늘려 가며 다시 띄운다 |
 
 ## 계정이나 키가 여러 개일 때
 

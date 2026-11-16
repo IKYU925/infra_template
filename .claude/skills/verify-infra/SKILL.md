@@ -14,7 +14,7 @@ S=.claude/skills/verify-infra/scripts/verify.sh   # run from repo root
 $S launch | $S doctor | $S drive <feature> | $S tf <dir> <args> | $S aws <args> | $S cleanup
 ```
 
-**Hard rule: never run `terraform apply`/`plan` against `envs/dev`, `envs/prod`, or `bootstrap` with real credentials, and never `make tf-apply`.** Those create billable AWS resources in shared accounts (`allowed_account_ids` are placeholders `111111111111`, `backend.hcl` has `CHANGE_ME`). Real dev/prod is proven only by `tf-static` locally plus the CI `plan` job. If the user explicitly asks for a real plan, have them run it themselves.
+**Hard rule: this skill never touches real AWS.** Never run `terraform apply`/`plan` against `envs/dev`, `envs/prod`, `bootstrap`, or `envs/aiops-eks/*` with real credentials, and never `make tf-apply` or `make eks-*` from this skill. `bootstrap/dev.tfvars` and `envs/aiops-eks/*` now hold the real lab account ID and state bucket; `envs/dev`, `envs/prod`, and `bootstrap/prod.tfvars` still hold placeholders. Real aiops-eks runs (`make eks-base-up`, `eks-up`, `eks-down`) are operator actions: show the plan, get explicit approval, and follow `docs/aiops-eks.md`. `features/aiops-eks.md` lists what only the real account caught.
 
 ## Prerequisites
 
