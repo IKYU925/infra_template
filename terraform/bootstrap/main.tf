@@ -121,8 +121,8 @@ module "plan_role" {
 
   enable_github_oidc = true
   oidc_subjects = [
-    "repo:${var.github_repository}:pull_request",
-    "repo:${var.github_repository}:ref:refs/heads/*",
+    "${var.github_oidc_sub_prefix}:pull_request",
+    "${var.github_oidc_sub_prefix}:ref:refs/heads/*",
   ]
 
   policies = {
@@ -142,7 +142,7 @@ module "apply_role" {
 
   enable_github_oidc = true
   oidc_subjects = [
-    "repo:${var.github_repository}:environment:${var.account_alias}",
+    "${var.github_oidc_sub_prefix}:environment:${var.account_alias}",
   ]
 
   policies = merge(var.apply_role_policy_arns, {
