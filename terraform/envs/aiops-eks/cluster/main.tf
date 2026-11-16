@@ -119,7 +119,6 @@ module "eks" {
       # PVC 로 생긴 EBS 볼륨에도 태그를 붙여 eks.sh leftovers 가 찾게 한다
       configuration_values = jsonencode({
         controller = {
-          k8sTagClusterId = var.name
           extraVolumeTags = { Project = "ai-incident", Layer = "cluster" }
         }
       })
