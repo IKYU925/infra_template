@@ -11,32 +11,9 @@ AI_auto_pipeline 4단계를 EKS 클러스터 하나에서 돌리기 위한 AWS �
 
 두 층은 state 파일부터 다르다. cluster 층은 base 층 output 을 `terraform_remote_state` 로 읽는다. 모든 리소스에 `Project=ai-incident` 와 `Layer=base|cluster` 태그가 붙는다. EBS CSI 가 만든 PVC 볼륨에도 같은 태그가 붙는다.
 
-## 계정과 자격 증명을 준비한다
-
-Terraform 은 루트가 아닌 IAM 사용자로 실행한다. 세 층이 IAM 역할, OIDC 공급자, VPC, EKS, KMS 를 만들기 때문에 이 사용자에게는 `AdministratorAccess` 를 준다. `iam:CreateRole` 이 있으면 어차피 관리자 권한을 스스로 만들 수 있으므로, 권한을 잘게 나눠도 실제로 막는 것은 없고 apply 만 중간에 실패한다.
-
-루트로 콘솔에 로그인해 다음을 한다.
-
-1. 루트에 MFA 를 등록한다. 계정 이름 → Security credentials → Assign MFA device.
-2. 같은 화면에서 루트 액세스 키가 있으면 삭제한다.
-3. 계정 이름 → Account → IAM user and role access to Billing information → Activate IAM Access. 루트만 켤 수 있고, 꺼져 있으면 IAM 사용자는 비용 할당 태그와 예산 화면에 들어가지 못한다.
-4. IAM → Users → Create user. 콘솔 접근을 켜고 `AdministratorAccess` 를 직접 붙인다. 콘솔 로그인 URL(`https://<계정ID>.signin.aws.amazon.com/console`)을 적어 둔다.
-5. 그 사용자의 Security credentials 에서 MFA 를 등록하고, Create access key → Command Line Interface 로 키를 만든다.
-
-이후 콘솔은 IAM 사용자로 들어가고 루트는 쓰지 않는다. 맥에서는 키를 `aws configure` 로 넣는다. 리전은 `ap-northeast-2` 다. 키는 `~/.aws/credentials` 에만 둔다. 이 저장소는 공개 저장소다.
-
-다음 명령으로 확인한다.
-
-```bash
-aws sts get-caller-identity --query Arn --output text
-# arn:aws:iam::<계정ID>:user/<이름> 이어야 한다. :root 면 루트 키가 들어간 것이다.
-aws iam get-account-summary --query 'SummaryMap.[AccountMFAEnabled,AccountAccessKeysPresent]' --output text
-# 1 0 이어야 한다. 루트 MFA 켜짐, 루트 액세스 키 없음.
-aws iam list-mfa-devices --query 'length(MFADevices)'
-# 1 이상이어야 한다. IAM 사용자 MFA.
-```
-
 ## 처음 한 번 준비한다
+
+AWS CLI 자격 증명은 [aws-account.md](aws-account.md) 대로 만든다. `aws sts get-caller-identity` 가 IAM 사용자로 나와야 한다.
 
 맥에 `terraform`(1.11.1 이상), `aws`, `kubectl`, `jq` 가 있어야 한다. brew 기본 저장소의 `terraform` 은 1.5.7 에서 멈춰 있으므로 `brew install hashicorp/tap/terraform` 으로 설치한다.
 

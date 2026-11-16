@@ -83,7 +83,7 @@ DB 에 직접 붙기: `psql postgresql://app:<비번>@localhost:5432/app`
 
 ## 4. AWS 계정 부트스트랩 (인프라팀, 계정당 한 번)
 
-1. 관리자 권한으로 로그인합니다. (SSO 를 쓴다면 `aws sso login --profile <프로필>` 후 `export AWS_PROFILE=<프로필>`)
+1. 관리자 권한으로 로그인합니다. IAM 사용자와 액세스 키를 아직 만들지 않았다면 [aws-account.md](aws-account.md) 를 먼저 따릅니다. (SSO 를 쓴다면 `aws sso login --profile <프로필>` 후 `export AWS_PROFILE=<프로필>`)
 
    ```bash
    aws sts get-caller-identity   # 계정 ID 가 dev 계정인지 확인
