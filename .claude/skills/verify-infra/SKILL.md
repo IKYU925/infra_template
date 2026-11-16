@@ -30,6 +30,7 @@ $S launch
 
 - Creates `.verify-runs/<timestamp>/` (gitignored) with `work/` (scratch) and `evidence/`, and points `.verify-runs/current` at it.
 - Writes `work/.env` from `local/.env.example` with **shifted ports** (postgres `15432`, app `18080`) so it never collides with the user's own `make local-up` (5432/8080). Copies `terraform/` into `work/terraform/` so the user's own `terraform/envs/local/terraform.tfstate` is never touched.
+- Mounts the docker socket into floci (`work/compose.floci-docker.yml`) so `eks create-cluster` starts a real k3s container (`floci-aws-eks-<name>`). Containers floci starts this way carry the label `floci=true`; cleanup removes them with their `floci-aws-*` networks and volumes.
 - Starts compose project **`verify-infra`** with the `aws` profile (postgres + app + floci) and `--wait` until all healthchecks pass, then runs `doctor`.
 - Ready = the line `READY: app http://127.0.0.1:18080 ...` after six `ok` lines. Empty data dir is fine: postgres initialises the `app` DB itself; floci starts empty and `drive local-aws` creates the resources.
 
@@ -52,8 +53,9 @@ Features live in [`features/`](features/README.md). Each `drive` target exits no
 | Command | Proves |
 |---|---|
 | `$S drive local-aws` | `terraform/envs/local` applies to floci, the S3 bucket + Secrets Manager secret really exist, re-plan is empty |
-| `$S drive tf-static` | `terraform fmt -check` + `init -backend=false && validate` for bootstrap, envs/local, envs/dev, envs/prod (what CI `fmt`/`validate` do) |
+| `$S drive tf-static` | `terraform fmt -check` + `init -backend=false && validate` for bootstrap, envs/local, envs/dev, envs/prod, envs/aiops-eks/{base,cluster} (what CI `fmt`/`validate` do) |
 | `$S drive ansible-lab` | `ansible ping` + `site.yml` against the Ubuntu 24.04 lab container, idempotent 2nd run, rendered `/opt/sample-app/compose.yml` |
+| `$S drive aiops-eks` | `envs/aiops-eks/base` then `cluster` apply to floci (EKS runs as a real k3s), ArgoCD + `aiops-root` exist with the contract values, both re-plans empty, `eks.sh drain` cascades every Application away, `eks.sh leftovers` counts the cluster layer and ignores base |
 | `$S drive local-app` | app container serves HTTP 200 with the right env wiring, postgres accepts writes |
 
 Ad-hoc access to the same instance:
@@ -83,7 +85,7 @@ When you report, quote the key lines and give the evidence path.
 $S cleanup
 ```
 
-Runs `docker compose -p verify-infra ... down -v --remove-orphans` across all profiles (kills only what launch started, by compose project label, never by process name), deletes `work/` (env file, terraform copy + state, galaxy content), removes the `current` link, and fails loudly if any `verify-infra` container survives. **`evidence/` is kept.** Run cleanup after every failed iteration too. Delete old runs by hand with `rm -rf .verify-runs/<timestamp>` when no longer needed.
+Runs `docker compose -p verify-infra ... down -v --remove-orphans` across all profiles (kills only what launch started, by compose project label and floci's `floci=true` label, never by process name), deletes `work/` (env file, terraform copy + state, galaxy content), removes the `current` link, and fails loudly if any `verify-infra` container survives. **`evidence/` is kept.** Run cleanup after every failed iteration too. Delete old runs by hand with `rm -rf .verify-runs/<timestamp>` when no longer needed.
 
 ## Helpers
 

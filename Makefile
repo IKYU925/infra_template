@@ -4,7 +4,7 @@ TF_DIR := terraform/envs/$(ENV)
 COMPOSE := docker compose -f local/docker-compose.yml --env-file local/.env
 
 .DEFAULT_GOAL := help
-.PHONY: help local-up local-aws-up local-localstack-up local-down tf-init tf-plan tf-apply tf-fmt tf-validate ansible-deps ansible-ping ansible-run scan
+.PHONY: help eks-base-up eks-up eks-down eks-leftovers eks-secrets local-up local-aws-up local-localstack-up local-down tf-init tf-plan tf-apply tf-fmt tf-validate ansible-deps ansible-ping ansible-run scan
 
 help: ## 명령 목록
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-22s\033[0m %s\n", $$1, $$2}'
@@ -39,7 +39,26 @@ tf-fmt: ## terraform fmt
 	terraform fmt -recursive terraform
 
 tf-validate: ## 모든 루트 validate (backend 없이)
-	@for d in bootstrap envs/local envs/dev envs/prod; do echo "== $$d"; terraform -chdir=terraform/$$d init -backend=false -input=false >/dev/null && terraform -chdir=terraform/$$d validate || exit 1; done
+	@for d in bootstrap envs/local envs/dev envs/prod envs/aiops-eks/base envs/aiops-eks/cluster; do echo "== $$d"; terraform -chdir=terraform/$$d init -backend=false -input=false >/dev/null && terraform -chdir=terraform/$$d validate || exit 1; done
+
+EKS := terraform/envs/aiops-eks/eks.sh
+AIOPS_ENV ?= ../AI_auto_pipeline/.env
+
+eks-base-up: ## aiops-eks base 층 apply (ECR, Loki S3, 비밀, Pod Identity 역할, 예산. 한 번만)
+	terraform -chdir=terraform/envs/aiops-eks/base init -input=false -backend-config=backend.hcl
+	terraform -chdir=terraform/envs/aiops-eks/base apply
+
+eks-up: ## aiops-eks cluster 층 apply, 노드 Ready 까지 대기 (과금 시작)
+	$(EKS) up
+
+eks-down: ## 루트 앱 삭제 -> PVC 정리 -> cluster 층 destroy -> leftovers
+	$(EKS) down
+
+eks-leftovers: ## cluster 층 리소스가 남았는지 확인 (남으면 실패)
+	$(EKS) leftovers
+
+eks-secrets: ## AIOPS_ENV(.env)의 값을 Secrets Manager ai-incident/aiops 에 넣는다
+	$(EKS) secrets $(AIOPS_ENV)
 
 ansible-deps: ## Ansible 롤/컬렉션 설치
 	cd ansible && ansible-galaxy role install -r requirements.yml -p .galaxy/roles && ansible-galaxy collection install -r requirements.yml -p .galaxy/collections
