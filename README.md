@@ -10,6 +10,7 @@ Terraform 으로 AWS 리소스를 만들고, Ansible 로 서버를 설정하며,
 | **local** | 개발자 PC | Docker Compose (postgres + app), 선택으로 floci / LocalStack 로컬 AWS |
 | **dev** | AWS (dev 계정) | Terraform `envs/dev` + Ansible `inventories/dev` |
 | **prod** | AWS (prod 계정) | Terraform `envs/prod` + Ansible `inventories/prod` |
+| **aiops-eks** | AWS (실습 계정) | Terraform `envs/aiops-eks/{base,cluster}` + `eks.sh`. AI_auto_pipeline 4단계 EKS, 코어타임에만 cluster 층을 띄움 ([docs/aiops-eks.md](docs/aiops-eks.md)) |
 
 ---
 
@@ -23,7 +24,8 @@ Terraform 으로 AWS 리소스를 만들고, Ansible 로 서버를 설정하며,
 │   └── envs/
 │       ├── local/            # (선택) floci/LocalStack 대상. S3, Secrets Manager 만
 │       ├── dev/              # backend.hcl + terraform.tfvars (비용 우선)
-│       └── prod/             # backend.hcl + terraform.tfvars (가용성·보호 우선)
+│       ├── prod/             # backend.hcl + terraform.tfvars (가용성·보호 우선)
+│       └── aiops-eks/        # AI_auto_pipeline 4단계 EKS. base(상시) / cluster(코어타임) 두 state + eks.sh
 ├── ansible/
 │   ├── inventories/{local,dev,prod}/   # 환경별 인벤토리 (dev/prod 는 aws_ec2 동적 인벤토리)
 │   ├── playbooks/            # site.yml = hardening -> docker -> app

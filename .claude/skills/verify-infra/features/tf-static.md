@@ -1,11 +1,11 @@
 # Terraform static checks (all roots)
 
-Formats and validates every Terraform root, including the real-AWS ones (`bootstrap`, `envs/dev`, `envs/prod`) without credentials or a backend. This is the strongest local proof available for changes to `modules/platform`.
+Formats and validates every Terraform root, including the real-AWS ones (`bootstrap`, `envs/dev`, `envs/prod`, `envs/aiops-eks/base`, `envs/aiops-eks/cluster`) without credentials or a backend. This is the strongest local proof available for changes to `modules/platform`.
 
 ## Sub-features
 
 - `tf-fmt` `terraform fmt -check -recursive` over `terraform/`.
-- `tf-validate-bootstrap`, `tf-validate-local`, `tf-validate-dev`, `tf-validate-prod` `init -backend=false` + `validate` per root (downloads pinned registry modules and the `~> 6.71` aws provider).
+- `tf-validate-bootstrap`, `tf-validate-local`, `tf-validate-dev`, `tf-validate-prod`, `tf-validate-aiops-eks-base`, `tf-validate-aiops-eks-cluster` `init -backend=false` + `validate` per root (downloads pinned registry modules and the `~> 6.71` aws provider).
 
 ## How to get to it (user POV)
 
