@@ -19,9 +19,9 @@ Applies `terraform/envs/local` to the floci AWS emulator: an S3 artifact bucket 
 
 Preconditions: `$S launch` done and `$S doctor` green (floci owns :4566).
 
-- **Apply.** `$S drive local-aws`. Runs init + `apply -var aws_endpoint=http://aws:4566` in the run's terraform copy. `evidence/local-aws/tf-apply.txt` ends with `Apply complete! Resources: 5 added`.
-- **Bucket exists.** Checked from floci, not from state: `s3-buckets.json` lists `myproject-local-artifacts`; `s3-versioning.json` has `"Status": "Enabled"`; `s3-public-access-block.json` has all four `true`.
-- **Secret.** `secret.json` is `{"dbname":"app","host":"postgres","port":5432,"username":"app"}`.
+- **Apply.** `$S drive local-aws`. Runs init + `apply -var aws_endpoint=http://aws:4566` in the run's terraform copy. `evidence/local-aws/tf-apply.txt` contains `Apply complete! Resources: 5 added` (the outputs follow it).
+- **Bucket exists.** Checked from floci, not from state: `s3-buckets.json` lists `myproject-local-artifacts`; `s3-versioning.json` has `"Status": "Enabled"`; `s3-public-access-block.json` has all four `true` (asserted).
+- **Secret.** `secret.json` is exactly `{"dbname":"app","host":"postgres","port":5432,"username":"app"}` (asserted, so a password in it fails the drive).
 - **Idempotent.** `tf-replan.txt` contains `No changes.` (plan `-detailed-exitcode` returned 0).
 - **Ad hoc.** `$S aws secretsmanager list-secrets`, `$S tf envs/local state list`.
 
@@ -31,3 +31,4 @@ Preconditions: `$S launch` done and `$S doctor` green (floci owns :4566).
 - floci keeps state in memory: after `cleanup` (or a floci restart) the resources are gone but the terraform state in `work/` would claim they exist. Always relaunch fresh rather than reusing an old `work/`.
 - The provider uses fake creds `test/test` and skips STS; account id shows as `000000000000`.
 - This proves the S3/Secrets Manager wiring only. VPC/EC2/RDS in `modules/platform` are never applied locally.
+- Launch gives floci a second network alias `000000000000.aws` because the AWS provider calls S3 Control at `<account>.<endpoint host>`. `make local-aws-up` has only the `aws` alias, so an S3 Control failure there is not reproduced here.

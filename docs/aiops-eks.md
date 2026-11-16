@@ -18,7 +18,7 @@ AWS CLI 자격 증명은 [aws-account.md](aws-account.md) 대로 만든다. `aws
 맥에 `terraform`(1.11.1 이상), `aws`, `kubectl`, `jq` 가 있어야 한다. brew 기본 저장소의 `terraform` 은 1.5.7 에서 멈춰 있으므로 `brew install hashicorp/tap/terraform` 으로 설치한다.
 
 1. `terraform/bootstrap` 이 실제 계정에 적용돼 있는지 확인한다. state 버킷, 잠금 테이블, `gha-apply` 역할을 쓴다.
-2. 아래 파일의 `CHANGE_ME`, `111111111111` 을 채운다.
+2. 아래 파일에 계정 값을 넣는다. 지금은 실습 계정 값이 들어 있다. 다른 계정으로 옮길 때 bootstrap output 으로 바꾼다.
    - `base/backend.hcl`, `cluster/backend.hcl`: bootstrap 의 버킷과 잠금 테이블.
    - `base/terraform.tfvars`: 계정 ID. 예산 알림 메일은 커밋하지 않고 `make eks-base-up` 전에 `export TF_VAR_budget_email=<메일>` 로 넘긴다. 없으면 apply 가 물어본다.
    - `cluster/terraform.tfvars`: 계정 ID, `state_bucket`, `admin_principal_arns`(운영자 주체와 `gha-apply` 역할).
@@ -30,9 +30,11 @@ AWS CLI 자격 증명은 [aws-account.md](aws-account.md) 대로 만든다. `aws
 ## 클러스터를 올리고 내린다
 
 - 올리기: `make eks-up`. cluster 층을 apply 하고 노드 2대가 Ready 가 될 때까지 기다린 뒤 output 을 출력한다. 걸린 시간이 `up took` 로그에 남는다.
-- kubectl 연결: output 의 `kubeconfig_command` 를 실행한다.
+- kubectl 연결: output 의 `kubeconfig_command` 를 실행한다. `~/.kube/config` 를 건드리기 싫으면 `--kubeconfig ~/.kube/ai-incident` 를 붙이고 `export KUBECONFIG=~/.kube/ai-incident` 한다.
 - ArgoCD 화면: `kubectl -n argocd port-forward svc/argocd-server 8080:443`. 초기 비밀번호는 `kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath='{.data.password}' | base64 -d`.
 - 내리기: `make eks-down`. 끝에 남은 리소스 검사까지 한다.
+- 막 올린 직후 몇 분은 ArgoCD 앱이 Degraded 로 보일 수 있다. ExternalSecret 이 ClusterSecretStore 보다 먼저 생기면 `not found` 로 실패하고 간격을 늘려 다시 시도하기 때문이다. 첫 실행에서는 3분 안에 풀렸다. ECR 에 이미지가 없으면 aiops 와 shopapi 는 `ImagePullBackOff` 로 남는다.
+- 클러스터에 metrics-server 가 없어 `kubectl top` 은 동작하지 않는다.
 
 `eks.sh down` 의 순서는 고정이다. 수동 실행과 스케줄이 같은 스크립트를 부른다.
 
@@ -45,7 +47,7 @@ AWS CLI 자격 증명은 [aws-account.md](aws-account.md) 대로 만든다. `aws
 
 2~4단계만 하려면 `KUBECONFIG` 를 맞추고 `eks.sh drain` 을 실행한다. 이 단계를 건너뛰고 destroy 하면 ArgoCD 가 하위 앱을 지우는 동안 helm 삭제 제한 시간(5분)에 걸려 실패한다(floci 에서 확인).
 
-`leftovers` 는 `Project=ai-incident` 중 `Layer=base` 가 아닌 것, `kubernetes.io/cluster/ai-incident` 태그가 붙은 것, VPC CNI 가 만든 ENI 를 센다. 종료된 인스턴스와 삭제된 NAT 는 태그 API 에 한동안 남아도 세지 않는다.
+`leftovers` 는 `Project=ai-incident` 중 `Layer=base` 가 아닌 것, `kubernetes.io/cluster/ai-incident` 태그가 붙은 것, VPC CNI 가 만든 ENI 를 센다. 태그 API 는 지운 리소스(인스턴스, NAT, 볼륨, 보안 그룹, 서브넷, Pod Identity 연결 등)를 한동안 계속 돌려주므로, 종류별 API 로 실제로 남았는지 확인한 것만 센다. 확인 방법을 모르는 종류와 조회가 실패한 것은 남은 것으로 센다.
 
 ## 스케줄은 코어타임에만 클러스터를 둔다
 
@@ -64,6 +66,16 @@ AWS CLI 자격 증명은 [aws-account.md](aws-account.md) 대로 만든다. `aws
 - 워크플로는 `concurrency: eks` 하나로 묶여 up 과 down 이 겹치지 않는다. Terraform state 잠금도 그대로 쓴다.
 - 정리 실행이 실패하면(down 실패, 남은 리소스 있음) GitHub 이 실패 알림 메일을 보낸다.
 - 올리기 시각은 첫 실행에서 잰 "eks-up + ArgoCD 전체 Healthy" 시간만큼 10:00 보다 당긴다. 바꿀 때는 `eks.yml` 의 cron 과 `eks.sh` 의 `UP_AT` 을 함께 바꾼다.
+
+코어타임 밖에 시험으로 올릴 때는 정리 실행이 클러스터를 지운다. `EKS_HOLD_UNTIL` 은 09:30 이전에는 효과가 없다. 그동안은 Environment `dev` 의 `AWS_APPLY_ROLE_ARN` 을 지워 정리 실행을 건너뛰게 하고, `make eks-down` 뒤 다시 넣는다. 지운 동안에는 클러스터가 저절로 내려가지 않는다.
+
+```bash
+gh variable delete AWS_APPLY_ROLE_ARN --env dev
+make eks-up
+# ... 시험 ...
+make eks-down
+gh variable set AWS_APPLY_ROLE_ARN --env dev --body "$(terraform -chdir=terraform/bootstrap output -raw apply_role_arn)"
+```
 
 `eks.sh keep-up` 이 코어타임 판단을 한다. `terraform/envs/aiops-eks/eks_test.sh` 가 그 경계값을 검사한다.
 
@@ -85,7 +97,7 @@ AWS CLI 자격 증명은 [aws-account.md](aws-account.md) 대로 만든다. `aws
 
 ## 로컬에서 검증한다
 
-`.claude/skills/verify-infra` 의 `drive aiops-eks` 가 floci 에 두 층을 apply 한다. floci 는 EKS 를 k3s 컨테이너로 띄우므로 ArgoCD 설치와 루트 앱까지 확인한다. 실제 노드, NAT, Pod Identity 자격 증명 주입, `eks.sh up`·`down` 은 실제 계정에서만 확인된다.
+`.claude/skills/verify-infra` 의 `drive aiops-eks` 가 floci 에 두 층을 apply 한다. floci 는 EKS 를 k3s 컨테이너로 띄우므로 ArgoCD 설치와 루트 앱까지 확인한다. 실제 노드, NAT, Pod Identity 자격 증명 주입, EBS 볼륨, 애드온 설정 스키마, `eks.sh up`·`down` 은 실제 계정에서만 확인된다. 2026-11-17 첫 실행에서 모두 확인했다. floci 가 놓치고 실제 계정에서 드러난 것은 `.claude/skills/verify-infra/features/aiops-eks.md` 의 "Real-account findings" 에 있다.
 
 ## 프로젝트를 끝낸다
 

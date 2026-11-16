@@ -114,6 +114,26 @@ down() {
   leftovers
 }
 
+# 태그 API 는 지운 리소스를 한동안 계속 돌려준다. 종류별 API 로 실제로 남았는지 확인한다
+gone() {
+  local arn="$1" id="${1##*/}" out
+  case "$arn" in
+    *:instance/*) out="$(aws ec2 describe-instances --region "$REGION" --instance-ids "$id" --query 'Reservations[].Instances[].State.Name' --output text 2>&1)" ;;
+    *:natgateway/*) out="$(aws ec2 describe-nat-gateways --region "$REGION" --nat-gateway-ids "$id" --query 'NatGateways[].State' --output text 2>&1)" ;;
+    *:volume/*) out="$(aws ec2 describe-volumes --region "$REGION" --volume-ids "$id" --query 'Volumes[].State' --output text 2>&1)" ;;
+    *:security-group/*) out="$(aws ec2 describe-security-groups --region "$REGION" --group-ids "$id" --query 'SecurityGroups[].GroupId' --output text 2>&1)" ;;
+    *:subnet/*) out="$(aws ec2 describe-subnets --region "$REGION" --subnet-ids "$id" --query 'Subnets[].SubnetId' --output text 2>&1)" ;;
+    *:vpc/*) out="$(aws ec2 describe-vpcs --region "$REGION" --vpc-ids "$id" --query 'Vpcs[].VpcId' --output text 2>&1)" ;;
+    *:route-table/*) out="$(aws ec2 describe-route-tables --region "$REGION" --route-table-ids "$id" --query 'RouteTables[].RouteTableId' --output text 2>&1)" ;;
+    *:internet-gateway/*) out="$(aws ec2 describe-internet-gateways --region "$REGION" --internet-gateway-ids "$id" --query 'InternetGateways[].InternetGatewayId' --output text 2>&1)" ;;
+    *:elastic-ip/*) out="$(aws ec2 describe-addresses --region "$REGION" --allocation-ids "$id" --query 'Addresses[].AllocationId' --output text 2>&1)" ;;
+    *:launch-template/*) out="$(aws ec2 describe-launch-templates --region "$REGION" --launch-template-ids "$id" --query 'LaunchTemplates[].LaunchTemplateId' --output text 2>&1)" ;;
+    *:podidentityassociation/*) out="$(aws eks describe-pod-identity-association --region "$REGION" --cluster-name "$NAME" --association-id "$id" --query association.associationId --output text 2>&1)" ;;
+    *) return 1 ;;
+  esac
+  [[ -z "$out" || "$out" == terminated || "$out" == deleted || "$out" == *NotFound* ]]
+}
+
 leftovers() {
   local found=() arns arn state
   # 조회가 실패하면 "0개"로 읽지 않고 멈춘다. && 와 pipefail 이 실패를 넘긴다
@@ -130,18 +150,7 @@ leftovers() {
   )" || die "listing resources failed"
   while read -r arn; do
     [[ -n "$arn" ]] || continue
-    # 종료된 인스턴스, 삭제된 NAT 는 destroy 뒤에도 한동안 태그 API 에 남는다
-    case "$arn" in
-      *:instance/i-*)
-        state="$(aws ec2 describe-instances --region "$REGION" --instance-ids "${arn##*/}" \
-          --query 'Reservations[].Instances[].State.Name' --output text 2>&1 || true)"
-        [[ "$state" == terminated || "$state" == *InvalidInstanceID.NotFound* ]] && continue ;;
-      *:natgateway/nat-*)
-        state="$(aws ec2 describe-nat-gateways --region "$REGION" --nat-gateway-ids "${arn##*/}" \
-          --query 'NatGateways[].State' --output text 2>&1 || true)"
-        [[ "$state" == deleted || "$state" == *NotFound* ]] && continue ;;
-    esac
-    found+=("$arn")
+    gone "$arn" || found+=("$arn")
   done <<<"$arns"
   log "leftovers: ${#found[@]}"
   [[ ${#found[@]} -eq 0 ]] || { printf '%s\n' "${found[@]}"; return 1; }
