@@ -20,7 +20,7 @@
 ## 진행 (2026-11-17)
 
 - 새 맥에 `aws` 2.40.3, `terraform` 1.17.2(`hashicorp/tap`) 를 설치했다.
-- 계정과 자격 증명 준비(docs/aiops-eks.md "계정과 자격 증명을 준비한다")를 마쳤다. CLI 는 `AdministratorAccess` 가 붙은 IAM 사용자로 동작하고, 루트와 IAM 사용자 모두 MFA 가 켜져 있다.
+- 계정과 자격 증명 준비(docs/aws-account.md)를 마쳤다. CLI 는 `AdministratorAccess` 가 붙은 IAM 사용자로 동작하고, 루트와 IAM 사용자 모두 MFA 가 켜져 있다.
 - 남은 것: 루트 액세스 키가 아직 있다(`AccountAccessKeysPresent=1`). 콘솔에서 삭제해야 한다.
 - `terraform/bootstrap/dev.tfvars` 의 `github_repository` 를 실제 저장소로 바꿨다. 계정 ID 는 아직 `111111111111` 이다.
 - 노드 타입은 t4g.large 로 둔다. 첫 실계정 실행에서 메모리 사용량을 측정한 뒤 t4g.medium 을 다시 본다.

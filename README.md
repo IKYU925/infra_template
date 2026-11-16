@@ -39,6 +39,7 @@ Terraform 으로 AWS 리소스를 만들고, Ansible 로 서버를 설정하며,
 │   ├── dependabot.yml                # 고정 버전 자동 업데이트 PR
 │   └── CODEOWNERS                    # 팀별 리뷰 담당
 ├── docs/USAGE.md                     # 단계별 사용 가이드
+├── docs/aws-account.md               # AWS IAM 사용자, 액세스 키 발급·교체·유출 대응
 ├── trivy.yaml / .checkov.yaml        # 스캐너 설정 (보안팀 관리)
 ├── .pre-commit-config.yaml
 └── Makefile                          # make help
