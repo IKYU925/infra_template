@@ -51,7 +51,7 @@ session-manager-plugin # "installed successfully" 문구가 나오면 정상
 2. AWS 계정 ID 를 바꿉니다.
    - dev: `terraform/envs/dev/terraform.tfvars`, `terraform/bootstrap/dev.tfvars` 의 `111111111111`
    - prod: `terraform/envs/prod/terraform.tfvars`, `terraform/bootstrap/prod.tfvars` 의 `222222222222`
-3. `terraform/bootstrap/*.tfvars` 의 `github_repository` 를 실제 저장소(예: `IKYU925/infra_template`)로 바꿉니다.
+3. `terraform/bootstrap/*.tfvars` 의 `github_oidc_sub_prefix` 를 `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` 가 돌려주는 `sub_claim_prefix` 로 바꿉니다. immutable subject 가 켜진 저장소는 `repo:IKYU925@89255853/infra_template@1443078776` 처럼 owner 와 저장소 ID 가 붙습니다.
 4. `.github/CODEOWNERS` 의 `@your-org/...` 를 실제 GitHub 팀이나 사용자로 바꿉니다.
 5. 리전이 서울(`ap-northeast-2`)이 아니면 `tfvars` 와 `ansible/inventories/*/aws_ec2.yml`, `group_vars` 의 리전을 함께 바꿉니다.
 
@@ -231,7 +231,7 @@ terraform -chdir=terraform/envs/dev destroy
 | `Error acquiring the state lock` | 다른 사람이나 CI 가 실행 중입니다. 끝나길 기다리세요. 중단된 작업이 확실할 때만 `terraform force-unlock <ID>` |
 | `AccessDenied ... allowed_account_ids` | 다른 계정으로 로그인했습니다. `aws sts get-caller-identity` 로 확인하세요. |
 | CI plan 이 "건너뜁니다" 로 끝남 | 해당 Environment 에 `AWS_PLAN_ROLE_ARN` 변수가 없습니다 (5단계). |
-| CI 에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | bootstrap 의 `github_repository` 가 실제 저장소와 다르거나, apply 를 Environment 밖에서 실행했습니다. |
+| CI 에서 `Not authorized to perform sts:AssumeRoleWithWebIdentity` | bootstrap 의 `github_oidc_sub_prefix` 가 GitHub 의 `sub_claim_prefix` 와 다르거나, apply 를 Environment 밖에서 실행했습니다. |
 | `ansible-inventory --graph` 에 호스트가 없음 | AWS 로그인 상태, 리전, `tag:Project` 값(`aws_ec2.yml`)을 확인하세요. 인스턴스가 running 이어야 합니다. |
 | Ansible `SSM ... TargetNotConnected` | 인스턴스가 막 생성돼 SSM 에이전트가 아직 등록 전입니다. 2~3분 뒤 다시 시도하거나 Systems Manager → Fleet Manager 에서 상태를 확인하세요. |
 | Ansible S3 업로드 오류 | `ansible_aws_ssm_bucket_name` 이 Terraform 출력과 같은지 확인하세요. |

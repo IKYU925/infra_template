@@ -117,7 +117,7 @@ make local-down
 
 ```bash
 cd terraform/bootstrap
-# dev.tfvars 의 allowed_account_ids, github_repository 수정
+# dev.tfvars 의 allowed_account_ids, github_oidc_sub_prefix 수정
 terraform init
 terraform apply -var-file=dev.tfvars
 terraform output

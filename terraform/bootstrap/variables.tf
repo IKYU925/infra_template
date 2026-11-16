@@ -19,9 +19,14 @@ variable "allowed_account_ids" {
   type        = list(string)
 }
 
-variable "github_repository" {
-  description = "GitHub Actions OIDC 신뢰 대상 저장소 (owner/repo)"
+variable "github_oidc_sub_prefix" {
+  description = "GitHub Actions OIDC 토큰 sub 의 저장소 부분. `gh api repos/<owner>/<repo>/actions/oidc/customization/sub` 의 sub_claim_prefix 를 그대로 넣는다. immutable subject 가 켜진 저장소는 repo:<owner>@<owner_id>/<repo>@<repo_id> 형식이다"
   type        = string
+
+  validation {
+    condition     = startswith(var.github_oidc_sub_prefix, "repo:")
+    error_message = "repo: 로 시작해야 한다."
+  }
 }
 
 variable "create_github_oidc_provider" {
