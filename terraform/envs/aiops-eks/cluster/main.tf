@@ -116,7 +116,8 @@ module "eks" {
         role_arn        = local.base.ebs_csi_role_arn
         service_account = "ebs-csi-controller-sa"
       }]
-      # PVC 로 생긴 EBS 볼륨에도 태그를 붙여 eks.sh leftovers 가 찾게 한다
+      # PVC 로 생긴 EBS 볼륨에도 태그를 붙여 eks.sh leftovers 가 찾게 한다.
+      # k8sTagClusterId 는 애드온 설정 스키마에 없어 생성이 400 으로 실패한다
       configuration_values = jsonencode({
         controller = {
           extraVolumeTags = { Project = "ai-incident", Layer = "cluster" }

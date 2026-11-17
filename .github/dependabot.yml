@@ -8,6 +8,8 @@ updates:
       - /terraform/envs/local
       - /terraform/envs/dev
       - /terraform/envs/prod
+      - /terraform/envs/aiops-eks/base
+      - /terraform/envs/aiops-eks/cluster
     schedule:
       interval: weekly
     groups:
