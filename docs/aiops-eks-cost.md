@@ -60,10 +60,10 @@ base 층은 비밀 1개(0.40), ECR 이미지 2GB(0.20), Loki 로그 1GB(0.03)로
 | 항목 | 값 | 출처 |
 | --- | --- | --- |
 | 코어타임 운영 시 하루 비용 (1주 평균) | 미측정 | Cost Explorer `Project=ai-incident` 일별 |
-| eks-up 소요 시간 (apply + 노드 Ready) | 미측정 | `eks.sh up` 의 `up took` 로그, 워크플로 실행 시간 |
-| eks-up + ArgoCD 전체 Healthy | 미측정 | P2 이후. 올리기 cron 을 이 시간만큼 당긴다 |
-| eks-down 소요 시간 | 미측정 | `eks.sh down` 의 `down took` 로그 |
-| 비 코어타임 cluster 층 남은 리소스 | 미측정 | 정리 워크플로의 `leftovers: 0` 로그 |
+| eks-up 소요 시간 (apply + 노드 Ready) | 804초, 843초 (2026-11-17 수동 2회) | `eks.sh up` 의 `up took` 로그, 워크플로 실행 시간 |
+| eks-up + ArgoCD 전체 Healthy | 843초 + 241초 = 약 18분 (앱 10개, 손으로 바꾼 값 없음, 2026-11-17 2차) | P2 이후. 올리기 cron 을 이 시간만큼 당긴다 |
+| eks-down 소요 시간 | 811초, 790초 (2026-11-17 수동 2회) | `eks.sh down` 의 `down took` 로그 |
+| 비 코어타임 cluster 층 남은 리소스 | 0 (2026-11-17 수동 down 2회의 `leftovers: 0`. 정리 워크플로 실행분은 아직 없음) | 정리 워크플로의 `leftovers: 0` 로그 |
 | 계산기 예측과 실제의 차이 (데이터 전송, NAT 처리량, EBS) | 미측정 | 위 두 출처 비교 |
 | 누적 사용액 (프로젝트 시작일부터) | 0 | Cost Explorer |
 | 프로젝트 종료 시 실제 사용액과 남은 비율 | 미측정 | Billing |
