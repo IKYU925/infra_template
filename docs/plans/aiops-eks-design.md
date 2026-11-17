@@ -27,30 +27,47 @@ AI 장애 대응 자동화(AI_auto_pipeline)와 대상 서비스(shopapi), 관�
 
 ## 2. 전체 구조
 
-```text
-                               Slack (고객사별 채널, 승인 버튼)
-                                        ▲
-                                        │ 회신 / 승인
-┌──────────────────────── EKS 클러스터 (ap-northeast-2) ────────────────────────┐
-│                                                                               │
-│  argocd          ── app-of-apps ──▶ 아래 모든 namespace를 Git 기준으로 동기화   │
-│                                                                               │
-│  tenant-a/b      shopapi (장애 주입 대상)                                      │
-│     │ 메트릭, 로그                                                             │
-│     ▼                                                                         │
-│  monitoring      Prometheus ── 규칙 평가 ──▶ Alertmanager ── 웹훅 ─┐           │
-│                  Loki (S3) ◀── Alloy (Pod 로그)                    │           │
-│                  Grafana                                          │           │
-│                                                                   ▼           │
-│  aiops           api ──▶ Redis Streams ──▶ worker (LangGraph)                 │
-│                   │        Postgres, Qdrant (EBS gp3)                         │
-│                   ├─ 분석 컨텍스트: Loki 스택트레이스, K8s 이벤트,                │
-│                   │                 ArgoCD 배포 이력                            │
-│                   └─ 승인 조치: ArgoCD 롤백, rollout restart                    │
-│                                                                               │
-│  kube-system     EBS CSI, External Secrets ── Pod Identity ──▶ Secrets Manager │
-└───────────────────────────────────────────────────────────────────────────────┘
-        ▲ Terraform (infra_template envs/aiops-eks): VPC, EKS, 노드그룹, IAM, ECR, S3
+```mermaid
+flowchart TB
+  tf["Terraform · infra_template envs/aiops-eks<br/>VPC, EKS, 노드그룹, IAM, ECR, S3"]
+  slack["Slack<br/>고객사별 채널, 승인 버튼"]
+
+  subgraph eks["EKS 클러스터 (ap-northeast-2)"]
+    subgraph ns_argocd["argocd"]
+      argocd["ArgoCD app-of-apps<br/>모든 namespace를 Git 기준으로 동기화"]
+    end
+    subgraph ns_tenant["tenant-a / tenant-b"]
+      shopapi["shopapi<br/>장애 주입 대상"]
+    end
+    subgraph ns_mon["monitoring"]
+      prom["Prometheus"] -->|규칙 평가| am["Alertmanager"]
+      alloy["Alloy<br/>Pod 로그 수집"] --> loki["Loki"]
+      grafana["Grafana"]
+    end
+    subgraph ns_aiops["aiops"]
+      api["api"] --> redis["Redis Streams"] --> worker["worker<br/>LangGraph"]
+      store[("Postgres, Qdrant<br/>EBS gp3")]
+    end
+    subgraph ns_kube["kube-system"]
+      ebs["EBS CSI"]
+      eso["External Secrets"]
+    end
+  end
+
+  s3[("S3<br/>Loki 버킷")]
+  sm[("Secrets Manager")]
+
+  tf --> eks
+  shopapi -->|메트릭, 로그| prom
+  shopapi -.-> alloy
+  am -->|웹훅| api
+  loki --> s3
+  worker --- store
+  worker -->|"분석 컨텍스트<br/>Loki 스택트레이스, K8s 이벤트, ArgoCD 배포 이력"| loki
+  worker -->|"승인 조치<br/>ArgoCD 롤백, rollout restart"| argocd
+  worker <-->|회신 / 승인| slack
+  eso -->|Pod Identity| sm
+  ebs -.->|볼륨| store
 ```
 
 ## 3. 기술 선택과 근거
