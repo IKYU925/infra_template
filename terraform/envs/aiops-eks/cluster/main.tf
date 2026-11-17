@@ -203,7 +203,9 @@ resource "helm_release" "root_app" {
           }
         }
         destination = { server = "https://kubernetes.default.svc", namespace = "argocd" }
-        syncPolicy  = { automated = { prune = true, selfHeal = true } }
+        # selfHeal 을 끈다. 켜 두면 하위 Application 의 이미지를 바꾼 배포와 승인 후 롤백(AI_auto_pipeline 4-4)을
+        # 루트 앱이 1초 안에 Git 값으로 되돌린다. Git 이 바뀌면 자동 sync 는 그대로 따라간다
+        syncPolicy  = { automated = { prune = true, selfHeal = false } }
       }
     }
   })]
