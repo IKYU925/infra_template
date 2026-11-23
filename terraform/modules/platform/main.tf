@@ -33,7 +33,7 @@ locals {
 ################################################################################
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "6.7.3"
+  version = "6.8.0"
 
   name = local.name
   cidr = var.vpc_cidr
@@ -148,7 +148,7 @@ module "db_sg" {
 ################################################################################
 module "artifact_bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
-  version = "5.17.0"
+  version = "5.18.0"
 
   bucket        = "${local.name}-artifacts-${data.aws_caller_identity.current.account_id}"
   force_destroy = var.artifact_bucket_force_destroy
@@ -197,7 +197,7 @@ module "artifact_bucket" {
 ################################################################################
 module "app_s3_policy" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-policy"
-  version = "6.8.2"
+  version = "6.11.1"
 
   name        = "${local.name}-app-artifacts"
   description = "App instances: read/write the artifact bucket (also used by Ansible SSM transfer)"

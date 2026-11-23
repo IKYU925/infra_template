@@ -39,7 +39,7 @@ locals {
 #trivy:ignore:AVD-AWS-0178
 module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
-  version = "6.7.3"
+  version = "6.8.0"
 
   name = var.name
   cidr = var.vpc_cidr
@@ -73,7 +73,7 @@ module "vpc" {
 #trivy:ignore:AVD-AWS-0104
 module "eks" {
   source  = "terraform-aws-modules/eks/aws"
-  version = "21.29.0"
+  version = "21.30.2"
 
   name               = var.name
   kubernetes_version = var.kubernetes_version
