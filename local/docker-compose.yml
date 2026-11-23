@@ -50,7 +50,7 @@ services:
   # ---------------------------------------------------------------- 선택: 로컬 AWS
   floci:
     profiles: ["aws"]
-    image: floci/floci:2.4.0
+    image: floci/floci:2.5.0
     restart: unless-stopped
     ports:
       - "127.0.0.1:4566:4566"
