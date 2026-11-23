@@ -14,7 +14,7 @@ locals {
 
 module "state_bucket" {
   source  = "terraform-aws-modules/s3-bucket/aws"
-  version = "5.17.0"
+  version = "5.18.0"
 
   bucket = local.state_bucket
 
@@ -77,7 +77,7 @@ module "lock_table" {
 ################################################################################
 module "github_oidc" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-oidc-provider"
-  version = "6.8.2"
+  version = "6.11.1"
 
   create = var.create_github_oidc_provider
   url    = "https://${local.oidc_provider}"
@@ -85,7 +85,7 @@ module "github_oidc" {
 
 module "state_access_policy" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-policy"
-  version = "6.8.2"
+  version = "6.11.1"
 
   name        = "${local.name}-tfstate-access"
   description = "Read/write Terraform state and lock table"
@@ -115,7 +115,7 @@ module "state_access_policy" {
 # PR 에서 terraform plan 만 돌리는 읽기 전용 역할 (모든 브랜치/PR 허용)
 module "plan_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role"
-  version = "6.8.2"
+  version = "6.11.1"
 
   name = "${local.name}-gha-plan"
 
@@ -136,7 +136,7 @@ module "plan_role" {
 # apply 역할은 GitHub Environment(승인 규칙이 걸린)에서만 assume 가능
 module "apply_role" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role"
-  version = "6.8.2"
+  version = "6.11.1"
 
   name = "${local.name}-gha-apply"
 
